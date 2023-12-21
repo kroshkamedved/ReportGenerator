@@ -24,11 +24,9 @@ import java.util.TreeMap;
 @RequiredArgsConstructor
 @Setter
 public class TableGenerator<T extends Record & AllFieldsToStringReady> {
-    private static final float DEFAULT_TABLE_HEADER_FONT_SIZE = 14f;
     private static final float DEFAULT_PAGE_VERTICAL_MARGIN = 30f;
     private static final float DEFAULT_PAGE_SIDE_MARGIN = 20f;
     private static final float DEFAULT_LINE_WIDTH = 2.0f;
-    private static final float DEFAULT_TABLE_CONTENT_FONT_SIZE = 12f;
 
     private final PDDocument document;
     private final List<T> tableRows;
@@ -36,7 +34,18 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private final SortedMap<String, Method> tableHeaders;
     private final Map<String, Float> columnWidthMap;
     private PDType1Font font;
+    private float rowHeight;
+
+    public void setCurrentFontSize(float currentFontSize) {
+        this.currentFontSize = currentFontSize;
+        this.cellMargin = ((font.getFontDescriptor().getFontBoundingBox().getHeight() / 1000) * currentFontSize) * 0.5f;
+        this.rowHeight = (font.getFontDescriptor().getFontBoundingBox().getHeight() / 1000) * currentFontSize + cellMargin;
+
+    }
+
     private float currentFontSize;
+    private float tableWidthCoefficient = 1;
+    public float cellMargin;
 
     public TableGenerator(List<T> tableRows, Class<T> clazz) {
         this.tableRows = tableRows;
@@ -45,7 +54,6 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         tableHeaders = new TreeMap<>();
         columnWidthMap = new HashMap<>();
         font = new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN);
-        currentFontSize = DEFAULT_TABLE_HEADER_FONT_SIZE;
         initialize();
     }
 
@@ -57,16 +65,18 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private void initialize() {
         Method[] methods = clazz.getMethods();
         Field[] fields = clazz.getDeclaredFields();
+        fulfillTableHeadersMap(fields, methods);
+    }
+
+    private void fulfillTableHeadersMap(Field[] fields, Method[] methods) {
         for (Field field : fields) {
-            // for simple class - String methodName = "get" + Character.toUpperCase(field.getName().charAt(0)) + field.getName().substring(1);
             String methodName = field.getName();
             Arrays.stream(methods).filter(method -> method.getName().equals(methodName)).findAny().ifPresent(method -> tableHeaders.put(field.getName(), method));
-
         }
     }
 
     public void createTable(String path, PDRectangle pdRectangle, float fontSize) throws IOException, InvocationTargetException, IllegalAccessException {
-        this.currentFontSize = fontSize;
+        setCurrentFontSize(fontSize);
         PDPage page = new PDPage(pdRectangle);
         document.addPage(page);
 
@@ -75,18 +85,13 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
         float startY = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
         float startX = DEFAULT_PAGE_SIDE_MARGIN;
-        float tableMaxWidth = page.getMediaBox().getWidth() - (DEFAULT_PAGE_SIDE_MARGIN * 2);
+        float tableMaxWidth = pdRectangle.getWidth() - (DEFAULT_PAGE_SIDE_MARGIN * 2);
+        float lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
 
         adjustFont(tableMaxWidth, stream);
         int rowNumber = 1;
-
-        float cellMargin = 5f;
-        float rowHeight = (font.getFontDescriptor().getFontBoundingBox().getHeight() / 1000) * fontSize + cellMargin;
-        drowTableHeader(stream, cellMargin, startX, startY, rowHeight);
-        for (T t : tableRows) {
-            drawRow(stream, cellMargin, startX, startY, rowHeight, t, rowNumber);
-            rowNumber++;
-        }
+        stream = drawTableHeader(stream, cellMargin, startX, startY, rowHeight, lastRawPosition);
+        stream = drawTableRaws(stream, startX, startY, rowHeight, rowNumber, lastRawPosition);
 
 
 
@@ -102,25 +107,58 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 fulfill table.
          */
 
-        // drawCell(stream, cellMargin, rowHeight, DEFAULT_PAGE_VERTICAL_MARGIN, startY, width, rowHeight, fields[0].getName());
         stream.close();
         document.save(path);
         document.close();
     }
 
-    private void drawRow(PDPageContentStream stream, float cellMargin, float startX, float startY, float rowHeight, T t, int rowNumber) throws InvocationTargetException, IllegalAccessException, IOException {
-        startY = startY - (rowHeight * rowNumber);
+    private PDPageContentStream drawTableRaws(PDPageContentStream stream, float startX, float startY, float rowHeight, int rowNumber, float lastRawPosition) throws InvocationTargetException, IllegalAccessException, IOException {
+        for (T t : tableRows) {
+            startY = startY - rowHeight;
+            if (lastRawPosition > startY) {
+                stream.close();
+                stream = addNextPage(stream);
+                startY = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
+                startX = DEFAULT_PAGE_SIDE_MARGIN;
+                lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
+                stream = drawTableHeader(stream, cellMargin, startX, startY, rowHeight, lastRawPosition);
+                startY = startY - rowHeight;
+            }
+            drawRow(stream, cellMargin, startX, startY, t);
+            rowNumber++;
+        }
+        return stream;
+    }
+
+    private void drawRow(PDPageContentStream stream, float cellMargin, float startX, float startY, T t) throws InvocationTargetException, IllegalAccessException, IOException {
         for (String string : tableHeaders.keySet()) {
-            drawCell(stream, cellMargin, startX, startY, columnWidthMap.get(string), rowHeight, tableHeaders.get(string).invoke(t).toString());
+            drawCell(stream, startX, startY, columnWidthMap.get(string), rowHeight, tableHeaders.get(string).invoke(t).toString());
             startX = startX + columnWidthMap.get(string) + 2 * cellMargin;
         }
     }
 
-    private void drowTableHeader(PDPageContentStream stream, float cellMargin, float startX, float startY, float rowHeight) throws IOException {
+    private PDPageContentStream drawTableHeader(PDPageContentStream stream, float cellMargin, float startX, float startY, float rowHeight, float lastRawPosition) throws IOException {
+        if (lastRawPosition > startY) {
+            stream = addNextPage(stream);
+            startY = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
+            startX = DEFAULT_PAGE_SIDE_MARGIN;
+            lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
+            drawTableHeader(stream, cellMargin, startX, startY, rowHeight, lastRawPosition);
+        }
         for (String string : tableHeaders.keySet()) {
-            drawCell(stream, cellMargin, startX, startY, columnWidthMap.get(string), rowHeight, string);
+            drawCell(stream, startX, startY, columnWidthMap.get(string), rowHeight, string);
             startX = startX + columnWidthMap.get(string) + 2 * cellMargin;
         }
+        return stream;
+    }
+
+    private PDPageContentStream addNextPage(PDPageContentStream stream) throws IOException {
+        stream.close();
+        PDPage newPage = new PDPage(document.getPage(0).getMediaBox());
+        document.addPage(newPage);
+        stream = new PDPageContentStream(document, newPage, PDPageContentStream.AppendMode.APPEND, true);
+        stream.setFont(font, currentFontSize);
+        return stream;
     }
 
     /**
@@ -135,11 +173,18 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
             float maxColumnValue = findMaxColumnWidth(columnName);
             columnWidthMap.put(columnName, (maxColumnValue / 1000) * currentFontSize);
         }
-        double totalWidth = columnWidthMap.values().stream().mapToDouble(Float::doubleValue).sum();
+        double totalWidth = calculateTotalWidth();
         if (totalWidth > tableMaxWidth) {
             setCurrentFontSize(--currentFontSize);
             adjustFont(tableMaxWidth, stream);
         }
+        tableWidthCoefficient = (float) (tableMaxWidth / totalWidth);
+    }
+
+    private double calculateTotalWidth() {
+        return columnWidthMap.values().stream()
+                .mapToDouble(Float::doubleValue)
+                .sum() + (cellMargin * 2 * columnWidthMap.size());
     }
 
     private float findMaxColumnWidth(String columnName) throws IOException {
@@ -152,8 +197,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                         throw new RuntimeException(e);
                     }
                 })
-                .map(Object::toString)
-                .map((value) -> {
+                .map(Object::toString).map((value) -> {
                     try {
                         return font.getStringWidth(value);
                     } catch (IOException e) {
@@ -161,11 +205,11 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                     }
                 })
                 .max(Comparator.comparingDouble(value -> value))
-                .filter(result -> result > columnNameWidth).orElse(columnNameWidth);
-
+                .filter(result -> result > columnNameWidth)
+                .orElse(columnNameWidth);
     }
 
-    public void drawCell(PDPageContentStream contentStream, float cellMargin, float x, float y, float width, float rowHeight, String content) throws IOException {
+    public void drawCell(PDPageContentStream contentStream, float x, float y, float width, float rowHeight, String content) throws IOException {
         contentStream.beginText();
         contentStream.newLineAtOffset(x + cellMargin + (width / 2 - (font.getStringWidth(content) / 2 / 1000 * currentFontSize)), (y - rowHeight + cellMargin));
         contentStream.showText(content);
