@@ -184,7 +184,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private double calculateTotalWidth() {
         return columnWidthMap.values().stream()
                 .mapToDouble(Float::doubleValue)
-                .sum() + (cellMargin * 2 * columnWidthMap.size());
+                .sum() + (cellMargin * 2 * columnWidthMap.size()) + (DEFAULT_LINE_WIDTH * (columnWidthMap.size() + 1) * 2);
     }
 
     private float findMaxColumnWidth(String columnName) throws IOException {
@@ -197,7 +197,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                         throw new RuntimeException(e);
                     }
                 })
-                .map(Object::toString).map((value) -> {
+                .map(Object::toString)
+                .map((value) -> {
                     try {
                         return font.getStringWidth(value);
                     } catch (IOException e) {
@@ -211,11 +212,11 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     public void drawCell(PDPageContentStream contentStream, float x, float y, float width, float rowHeight, String content) throws IOException {
         contentStream.beginText();
-        contentStream.newLineAtOffset(x + cellMargin + (width / 2 - (font.getStringWidth(content) / 2 / 1000 * currentFontSize)), (y - rowHeight + cellMargin));
+        contentStream.newLineAtOffset(x * tableWidthCoefficient + cellMargin * tableWidthCoefficient + (width * tableWidthCoefficient / 2 - (font.getStringWidth(content) / 2 / 1000 * currentFontSize)), (y - rowHeight + cellMargin));
         contentStream.showText(content);
         contentStream.endText();
         contentStream.setLineWidth(DEFAULT_LINE_WIDTH);
-        contentStream.addRect(x, y - rowHeight, width + 2 * cellMargin, rowHeight);
+        contentStream.addRect(x * tableWidthCoefficient, y - rowHeight, width * tableWidthCoefficient + 2 * cellMargin * tableWidthCoefficient, rowHeight);
         contentStream.stroke();
     }
 }
