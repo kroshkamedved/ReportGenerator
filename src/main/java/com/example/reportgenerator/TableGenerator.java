@@ -35,6 +35,20 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private final Map<String, Float> columnWidthMap;
     private PDType1Font font;
     private float rowHeight;
+    private PDPage pageWithSVG;
+    private float calculatedSVGHeight;
+
+    public TableGenerator(List<T> tableRows, Class<T> clazz, PDDocument document, float calculatedSVGHeight) {
+        this.tableRows = tableRows;
+        this.clazz = clazz;
+        this.document = document;
+        tableHeaders = new TreeMap<>();
+        columnWidthMap = new HashMap<>();
+        font = new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN);
+        this.pageWithSVG = document.getPage(0);
+        this.calculatedSVGHeight = calculatedSVGHeight;
+        initialize();
+    }
 
     public void setCurrentFontSize(float currentFontSize) {
         this.currentFontSize = currentFontSize;
@@ -77,13 +91,19 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     public void createTable(String path, PDRectangle pdRectangle, float fontSize) throws IOException, InvocationTargetException, IllegalAccessException {
         setCurrentFontSize(fontSize);
-        PDPage page = new PDPage(pdRectangle);
-        document.addPage(page);
-
+        PDPage page;
+        float startY;
+        if (pageWithSVG != null) {
+            pdRectangle = pageWithSVG.getMediaBox();
+            page = pageWithSVG;
+            startY = page.getMediaBox().getHeight() - calculatedSVGHeight + DEFAULT_PAGE_VERTICAL_MARGIN;
+            pageWithSVG = null;
+        } else {
+            page = new PDPage(pdRectangle);
+            startY = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
+            document.addPage(page);
+        }
         PDPageContentStream stream = new PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true);
-
-
-        float startY = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
         float startX = DEFAULT_PAGE_SIDE_MARGIN;
         float tableMaxWidth = pdRectangle.getWidth() - (DEFAULT_PAGE_SIDE_MARGIN * 2);
         float lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
