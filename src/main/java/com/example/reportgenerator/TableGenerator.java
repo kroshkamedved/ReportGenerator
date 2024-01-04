@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
@@ -36,9 +37,10 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private PDType1Font font;
     private float rowHeight;
     private PDPage pageWithSVG;
-    private float calculatedSVGHeight;
+    private float firstPageAdditionalTopPadding;
+    private boolean pageChanged;
 
-    public TableGenerator(List<T> tableRows, Class<T> clazz, PDDocument document, float calculatedSVGHeight) {
+    public TableGenerator(List<T> tableRows, Class<T> clazz, PDDocument document, float firstPageAdditionalTopPadding) {
         this.tableRows = tableRows;
         this.clazz = clazz;
         this.document = document;
@@ -46,7 +48,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         columnWidthMap = new HashMap<>();
         font = new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN);
         this.pageWithSVG = document.getPage(0);
-        this.calculatedSVGHeight = calculatedSVGHeight;
+        this.firstPageAdditionalTopPadding = firstPageAdditionalTopPadding;
         initialize();
     }
 
@@ -96,7 +98,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         if (pageWithSVG != null) {
             pdRectangle = pageWithSVG.getMediaBox();
             page = pageWithSVG;
-            startY = page.getMediaBox().getHeight() - calculatedSVGHeight + DEFAULT_PAGE_VERTICAL_MARGIN;
+            startY = page.getMediaBox().getHeight() - firstPageAdditionalTopPadding - DEFAULT_PAGE_VERTICAL_MARGIN;
             pageWithSVG = null;
         } else {
             page = new PDPage(pdRectangle);
@@ -111,15 +113,18 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         adjustFont(tableMaxWidth, stream);
         int rowNumber = 1;
         stream = drawTableHeader(stream, cellMargin, startX, startY, rowHeight, lastRawPosition);
+        if (pageChanged) startY = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
         stream = drawTableRaws(stream, startX, startY, rowHeight, rowNumber, lastRawPosition);
+        pageChanged = false;
 
 
 
         /* TODO
+            Algorithm:
             before starting to draw table we should calculate:
             1. Table column quantity.
                 max width for every column with default font size and default paddings.
-                    Summarize columns width to obtain table width. If obtained width wider the page width - adjust table font.
+                    Summarize columns width to obtain table width. If obtained width wider than page width - adjust table font.
             2. Calculate table height.
                Draw table headers. Headers position centered. Content apply toUpperCase();
             3. Draw table content. lower case.To numerate each row.
@@ -152,14 +157,18 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     private void drawRow(PDPageContentStream stream, float cellMargin, float startX, float startY, T t) throws InvocationTargetException, IllegalAccessException, IOException {
         for (String string : tableHeaders.keySet()) {
-            drawCell(stream, startX, startY, columnWidthMap.get(string), rowHeight, tableHeaders.get(string).invoke(t).toString());
-            startX = startX + columnWidthMap.get(string) + 2 * cellMargin;
+            Object content = tableHeaders.get(string).invoke(t);
+            if (content != null) {
+                drawCell(stream, startX, startY, columnWidthMap.get(string), rowHeight, content.toString());
+            }
+            startX = startX + (columnWidthMap.get(string) + 2 * cellMargin) * tableWidthCoefficient;
         }
     }
 
     private PDPageContentStream drawTableHeader(PDPageContentStream stream, float cellMargin, float startX, float startY, float rowHeight, float lastRawPosition) throws IOException {
         if (lastRawPosition > startY) {
             stream = addNextPage(stream);
+            pageChanged = true;
             startY = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
             startX = DEFAULT_PAGE_SIDE_MARGIN;
             lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
@@ -167,7 +176,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         }
         for (String string : tableHeaders.keySet()) {
             drawCell(stream, startX, startY, columnWidthMap.get(string), rowHeight, string);
-            startX = startX + columnWidthMap.get(string) + 2 * cellMargin;
+            startX = startX + (columnWidthMap.get(string) + 2 * cellMargin) * tableWidthCoefficient;
         }
         return stream;
     }
@@ -204,7 +213,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private double calculateTotalWidth() {
         return columnWidthMap.values().stream()
                 .mapToDouble(Float::doubleValue)
-                .sum() + (cellMargin * 2 * columnWidthMap.size()) + (DEFAULT_LINE_WIDTH * (columnWidthMap.size() + 1) * 2);
+                .sum() + (cellMargin * 2 * columnWidthMap.size());
     }
 
     private float findMaxColumnWidth(String columnName) throws IOException {
@@ -216,7 +225,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                     } catch (IllegalAccessException | InvocationTargetException e) {
                         throw new RuntimeException(e);
                     }
-                })
+                }).filter(Objects::nonNull)
                 .map(Object::toString)
                 .map((value) -> {
                     try {
@@ -232,11 +241,21 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     public void drawCell(PDPageContentStream contentStream, float x, float y, float width, float rowHeight, String content) throws IOException {
         contentStream.beginText();
-        contentStream.newLineAtOffset(x * tableWidthCoefficient + cellMargin * tableWidthCoefficient + (width * tableWidthCoefficient / 2 - (font.getStringWidth(content) / 2 / 1000 * currentFontSize)), (y - rowHeight + cellMargin));
-        contentStream.showText(content);
-        contentStream.endText();
+        if (content != null) {
+            contentStream.newLineAtOffset(x + calcCenteredTextStartingPosition(width, content),
+                    (y - rowHeight + cellMargin));
+            contentStream.showText(content);
+            contentStream.endText();
+        }
         contentStream.setLineWidth(DEFAULT_LINE_WIDTH);
-        contentStream.addRect(x * tableWidthCoefficient, y - rowHeight, width * tableWidthCoefficient + 2 * cellMargin * tableWidthCoefficient, rowHeight);
+        contentStream.addRect(x, y - rowHeight, width * tableWidthCoefficient + 2 * cellMargin * tableWidthCoefficient, rowHeight);
         contentStream.stroke();
+    }
+
+    private float calcCenteredTextStartingPosition(float width, String content) throws IOException {
+        float adjustedCellMargin = cellMargin * tableWidthCoefficient;
+        float adjustedCurrentColumnCenterPosition = (width * tableWidthCoefficient) / 2;
+        float currentContentHalfWidth = (font.getStringWidth(content) / 2 / 1000 * currentFontSize);
+        return (adjustedCellMargin) + (adjustedCurrentColumnCenterPosition - currentContentHalfWidth);
     }
 }
