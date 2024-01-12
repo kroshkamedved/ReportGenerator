@@ -239,11 +239,11 @@ public class ReportController {
         lastLineHeight = PDFUtil.drawParagraph(document, lastLineHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "REAGENTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f);
         TableGenerator<Compound> reagentsTable = new TableGenerator<>(reagents, Compound.class, document, PDRectangle.A4.getHeight() - lastLineHeight);
         lastLineHeight = reagentsTable.createTable(PDRectangle.A4, reactantsTable.getCurrentFontSize());
-        document.save("paintedAsItShouldBe.pdf");
+       // document.save("paintedAsItShouldBe.pdf");
         lastLineHeight = PDFUtil.drawParagraph(document, lastLineHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "PRODUCTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f);
         TableGenerator<Compound> productsTable = new TableGenerator<>(products, Compound.class, document, PDRectangle.A4.getHeight() - lastLineHeight);
         lastLineHeight = productsTable.createTable(PDRectangle.A4, reagentsTable.getCurrentFontSize());
-        document.save("paintedAsItShouldBeNextLine.pdf");
+       // document.save("paintedAsItShouldBeNextLine.pdf");
 
         lastLineHeight = PDFUtil.drawParagraph(document, lastLineHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "PROCEDURE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f);
         String fontPath = "src/main/resources/static/NotoSans-Medium.ttf";

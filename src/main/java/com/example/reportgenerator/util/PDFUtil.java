@@ -97,8 +97,8 @@ public class PDFUtil {
             object.setResources(pageWithSVG.getResources());
             object.setBBox(pageWithSVG.getBBox());
             AffineTransform matrix = object.getMatrix().createAffineTransform();
-            float svgWidthWithPaddings = pageWithSVG.getMediaBox().getWidth() + 2 * sideMargin;
-            float scaleX = maxWidth / (svgWidthWithPaddings);
+            float svgWidth = pageWithSVG.getMediaBox().getWidth();
+            float scaleX = maxWidth / (svgWidth);
             float scaleY = 1;
             if (scaleX > 1) {
                 scaleX = 1;
@@ -106,9 +106,9 @@ public class PDFUtil {
                 scaleY = scaleX;
             }
             float currentRowHeight = pageWithSVG.getBBox().getHeight() * scaleY;
-            newLineYHeight = newLineYHeight - currentRowHeight;
-            float shift = (maxWidth - (pageWithSVG.getMediaBox().getWidth() * scaleX));
-            matrix.translate(startX + shift, newLineYHeight);
+            newLineYHeight = newLineYHeight - currentRowHeight - (2 * verticalMargin);
+            float shift = (maxWidth - (pageWithSVG.getMediaBox().getWidth() * scaleX)) / 2;
+            matrix.translate(startX + shift + sideMargin, newLineYHeight + verticalMargin);
             matrix.scale(scaleX, scaleY);
             object.setMatrix(matrix);
             object.setFormType(1);
@@ -117,7 +117,7 @@ public class PDFUtil {
             stream.drawForm(object);
             stream.setStrokingColor(Color.black);
             stream.setLineWidth(0.125f);
-            stream.addRect(startX, newLineYHeight, maxWidth + sideMargin * 2, currentRowHeight);
+            stream.addRect(startX, newLineYHeight, maxWidth + sideMargin * 2, currentRowHeight + verticalMargin * 2);
             stream.stroke();
             stream.close();
         } catch (IOException e) {
