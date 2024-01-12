@@ -1,4 +1,4 @@
-package com.example.reportgenerator;
+package com.example.reportgenerator.legacy;
 
 import org.apache.batik.anim.dom.SAXSVGDocumentFactory;
 import org.apache.batik.bridge.*;

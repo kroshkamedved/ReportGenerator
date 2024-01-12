@@ -1,4 +1,4 @@
-package com.example.reportgenerator;
+package com.example.reportgenerator.legacy;
 
 import lombok.Getter;
 import lombok.Setter;
