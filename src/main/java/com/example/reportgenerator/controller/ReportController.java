@@ -33,6 +33,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
+import java.util.Optional;
 
 @RestController()
 @RequestMapping("/report")
@@ -178,14 +179,12 @@ public class ReportController {
         List<Compound> products = reportData.getProducts();
         reactants.add(reagents.get(0));
         reactants.add(products.get(0));
-        reagents.add(reactants.get(0));
-        reagents.add(products.get(0));
         products.add(reagents.get(0));
         products.add(reactants.get(0));
         PDDocument document = new PDDocument();
-        PDPage firstPage = new PDPage(PDRectangle.A4);
+        PDPage firstPage = new PDPage(PDRectangle.A5);
         document.addPage(firstPage);
-        float lastLineHeight = 0f;
+        float lastLineYHeight = 0f;
 
         //
         PDFTranscoder pdfTranscoder = new PDFTranscoder();
@@ -209,7 +208,7 @@ public class ReportController {
             scaleX = 1;
             scaleY = 1;
         }
-        float x = firstPage.getMediaBox().getWidth()/2 - (pageWithSVG.getMediaBox().getWidth() * scaleX) / 2;
+        float x = firstPage.getMediaBox().getWidth() / 2 - (pageWithSVG.getMediaBox().getWidth() * scaleX) / 2;
         float y = firstPage.getMediaBox().getHeight() - 2 * 20f - (pageWithSVG.getBBox().getHeight() * scaleY);
 
         matrix.translate(x, y);
@@ -225,30 +224,33 @@ public class ReportController {
 //        stream.showText("test test test test test test");
 //        stream.endText();
         stream.setLineWidth(0.5f);
-        stream.addRect(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN,y - TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN,firstPage.getMediaBox().getWidth() - 2 * TableGenerator.DEFAULT_PAGE_SIDE_MARGIN ,pageWithSVG.getMediaBox().getHeight() * scaleY + 2 * TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN);
-       // stream.addRect(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, firstPage.getMediaBox().getHeight() - (2 * 20f + 0.5f * 20f) - (pageWithSVG.getBBox().getHeight() * scaleY), pageWithSVG.getMediaBox().getWidth() * scaleX + TableGenerator.DEFAULT_PAGE_SIDE_MARGIN * 2, (pageWithSVG.getMediaBox().getHeight() * scaleY) + 20f);
+        stream.addRect(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, y - TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN, firstPage.getMediaBox().getWidth() - 2 * TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, pageWithSVG.getMediaBox().getHeight() * scaleY + 2 * TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN);
+        // stream.addRect(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, firstPage.getMediaBox().getHeight() - (2 * 20f + 0.5f * 20f) - (pageWithSVG.getBBox().getHeight() * scaleY), pageWithSVG.getMediaBox().getWidth() * scaleX + TableGenerator.DEFAULT_PAGE_SIDE_MARGIN * 2, (pageWithSVG.getMediaBox().getHeight() * scaleY) + 20f);
         stream.stroke();
         stream.close();
 
         //
 
-        lastLineHeight = PDFUtil.drawParagraph(document, y, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "REACTANTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN * 2);
-        TableGenerator<Compound> reactantsTable = new TableGenerator<>(reactants, Compound.class, document, PDRectangle.A4.getHeight() - lastLineHeight);
-        lastLineHeight = reactantsTable.createTable(PDRectangle.A4, 10);
+        //lastLineYHeight = PDFUtil.drawParagraph(document, y, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "REACTANTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN * 2);
+        lastLineYHeight = PDFUtil.drawParagraph(document, y - TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "REACTANTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f, true);
+        TableGenerator<Compound> reactantsTable = new TableGenerator<>(reactants, Compound.class, document, firstPage.getMediaBox().getHeight() - lastLineYHeight);
+        lastLineYHeight = reactantsTable.createTable(firstPage.getMediaBox(), 10);
 
-        lastLineHeight = PDFUtil.drawParagraph(document, lastLineHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "REAGENTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f);
-        TableGenerator<Compound> reagentsTable = new TableGenerator<>(reagents, Compound.class, document, PDRectangle.A4.getHeight() - lastLineHeight);
-        lastLineHeight = reagentsTable.createTable(PDRectangle.A4, reactantsTable.getCurrentFontSize());
-       // document.save("paintedAsItShouldBe.pdf");
-        lastLineHeight = PDFUtil.drawParagraph(document, lastLineHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "PRODUCTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f);
-        TableGenerator<Compound> productsTable = new TableGenerator<>(products, Compound.class, document, PDRectangle.A4.getHeight() - lastLineHeight);
-        lastLineHeight = productsTable.createTable(PDRectangle.A4, reagentsTable.getCurrentFontSize());
-       // document.save("paintedAsItShouldBeNextLine.pdf");
+        lastLineYHeight = PDFUtil.drawParagraph(document, lastLineYHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "REAGENTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f, true);
+        TableGenerator<Compound> reagentsTable = new TableGenerator<>(reagents, Compound.class, document, firstPage.getMediaBox().getHeight() - lastLineYHeight);
+        lastLineYHeight = reagentsTable.createTable(firstPage.getMediaBox(), reactantsTable.getCurrentFontSize());
 
-        lastLineHeight = PDFUtil.drawParagraph(document, lastLineHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "PROCEDURE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f);
+        // document.save("paintedAsItShouldBe.pdf");
+        lastLineYHeight = PDFUtil.drawParagraph(document, lastLineYHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 12, "PRODUCTS TABLE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f, true);
+
+        TableGenerator<Compound> productsTable = new TableGenerator<>(products, Compound.class, document, firstPage.getMediaBox().getHeight() - lastLineYHeight);
+        lastLineYHeight = productsTable.createTable(firstPage.getMediaBox(), reagentsTable.getCurrentFontSize());
+        // document.save("paintedAsItShouldBeNextLine.pdf");
+
+        lastLineYHeight = PDFUtil.drawParagraph(document, lastLineYHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 10, "PROCEDURE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f, true);
         String fontPath = "src/main/resources/static/NotoSans-Medium.ttf";
         PDFont font = PDType0Font.load(document, new File(fontPath));
-        lastLineHeight = PDFUtil.drawParagraph(document, lastLineHeight, font, 9, reportData.getExperiment().comment(), TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f);
+        lastLineYHeight = PDFUtil.drawParagraph(document, lastLineYHeight, font, 8, reportData.getExperiment().comment(), TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f, false);
 
 
         ByteArrayOutputStream byteArray = new ByteArrayOutputStream();
