@@ -46,7 +46,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     public static final float DEFAULT_PAGE_SIDE_MARGIN = 20f;
     public static final float DEFAULT_LINE_WIDTH = 0.125f;
     private static final Float DEFAULT_SVG_COLUMN_HEIGHT = 150f;
-    private static final String REGEX_FOR_MOL_NAMES = "\\)|\\((?=[a-zA-Z])|-|";//TODO CORRECT REGULAR EXPRESSION
+    private static final String REGEX_FOR_MOL_NAMES = "\\[|\\]|\\)|\\s|\\((?=[a-zA-Z])|-|";//TODO CORRECT REGULAR EXPRESSION
     private static float DEFAULT_MIN_FONT_SIZE = 6.0f;
     private static final int DEFAULT_A4_PIXEL_WIDTH = 842;
 
@@ -114,15 +114,16 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                     svgPresent = true;
                     svgFieldsWidthMap = new HashMap<>();
                 }
-                float maxCurrentColumnSVGWidth = calculateSVGWidth(field, "width");
-                svgFieldsWidthMap.put(methodName, maxCurrentColumnSVGWidth);
+                Optional<Float> maxCurrentColumnSVGWidth = calculateSVGWidth(field, "width");
+                maxCurrentColumnSVGWidth.ifPresent(aFloat -> svgFieldsWidthMap.put(methodName, aFloat));
             }
+            if (svgPresent && svgFieldsWidthMap.isEmpty()) svgPresent = false;
             Arrays.stream(methods).filter(method -> method.getName().equals(methodName)).findAny().ifPresent(method -> tableHeaders.put(field.getName(), method));
         }
     }
 
     //TODO check this logic
-    private float calculateSVGWidth(Field field, String attribute) {
+    private Optional<Float> calculateSVGWidth(Field field, String attribute) {
         field.setAccessible(true);
         return tableRows.stream()
                 .map(t -> {
@@ -131,12 +132,10 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                     } catch (IllegalAccessException ilg) {
                         throw new RuntimeException("SVG width calculation problem");
                     }
-                })
+                }).filter(Objects::nonNull)
                 .map(svg -> getSizeAttributeValueFromSVG(svg, attribute))
                 .max(Float::compare)
-                .map(a -> Float.min(a, maxSvgColumnWidth))
-                .orElse(maxSvgColumnWidth);
-
+                .map(a -> Float.min(a, maxSvgColumnWidth));
     }
 
     /**
@@ -172,22 +171,6 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         }
         stream = drawTableRaws(stream, startX, rowHeight, rowNumber, lastRawPosition);
         pageChanged = false;
-
-
-
-        /* TODO
-            Algorithm:
-            before starting to draw table we should calculate:
-            1. Table column quantity.
-                max width for every column with default font size and default paddings.
-                    Summarize columns width to obtain table width. If obtained width wider than page width - adjust table font.
-            2. Calculate table height.
-               Draw table headers. Headers position centered. Content apply toUpperCase();
-            3. Draw table content. lower case.To numerate each row.
-                If cursor reached end of the page - create new PDPage, draw header on the new page and continue
-                fulfill table.
-         */
-
         stream.close();
         return newLineYHeight;
     }
@@ -223,8 +206,9 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 nextRowYHeight = PDFUtil.drawSVGStructure(document, startX, content.toString(), cellMargin, cellMargin, svgFieldsWidthMap.get(columnName), newLineYHeight, this, multiRowMaxColumnHeight);
                 startX = startX + svgFieldsWidthMap.get(columnName) + cellMargin * 2;
             } else {
+                //TODO debug and prevent add column separation + calculate width before row draw
                 if (multiRowColumns.containsKey(t) && multiRowColumns.get(t).contains(columnName)) {
-                    // PDFUtil.drawParagraph(document, nextRowYHeight, font, currentFontSize, content.toString(), Optional.of(REGEX_FOR_MOL_NAMES), startX, 0, columnWidthMap.get(string));
+                    //TODO DEBUG strangePostMan results  if(nextRowYHeight == newLineYHeight) nextRowYHeight = multiLineFieldsHeight.get(t);
                     startX = drawMultiRowCell(stream, startX, columnName, newLineYHeight - nextRowYHeight, content.toString(), tableWidthCoefficient, REGEX_FOR_MOL_NAMES, t);
                 } else {
                     startX = drawCell(stream, startX, columnName, newLineYHeight - nextRowYHeight, content.toString(), tableWidthCoefficient);
@@ -244,8 +228,9 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         Matcher matcher = pattern.matcher(content);
         StringBuilder sb = new StringBuilder();
         int start = 0;
+        int end = 0;
         while (matcher.find()) {
-            int end = matcher.end();
+            end = matcher.end();
             String currentSubstring = content.substring(start, end);
             try {
                 if (calcStringWidth(sb + currentSubstring + (2 * cellMargin)) < currentColumnMaxWidth) {
@@ -259,6 +244,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 throw new RuntimeException(e);
             }
         }
+        if (!sb.isEmpty()) tmpList.add(sb.toString());
+        //  splitRegexNotMatchedContentResidue(tmpList, end, content, currentColumnMaxWidth);
         String[] words = new String[tmpList.size()];
         words = tmpList.toArray(words);
         drawRectangle(columnName, stream, startX, newLineYHeight, rowHeight, tableWidthCoefficient);
@@ -268,10 +255,34 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         float verticalPadding = (rowHeight - contentHeight) / 2;
         float currentStartPoint = newLineYHeight - rowHeight + verticalPadding + contentHeight;
         for (var line : words) {
-            drawMultiRowContent(stream, startX, columnName, currentStartPoint-cellMargin, line, tableWidthCoefficient);
-            currentStartPoint = currentStartPoint - headerRowHeight + cellMargin/2;
+            drawMultiRowContent(stream, startX, columnName, currentStartPoint - headerRowHeight + cellMargin, line, tableWidthCoefficient); // TODO hard calculations almost hardcoding
+            currentStartPoint = currentStartPoint - headerRowHeight;
         }
         return startX + (columnWidthMap.get(columnName) + 2 * cellMargin) * tableWidthCoefficient;
+    }
+
+    private int calcResidueRows(int end, String content, float currentColumnMaxWidth) throws IOException {
+        List<String> substrings = new ArrayList<>();
+        splitRegexNotMatchedContentResidue(substrings, end, content, currentColumnMaxWidth);
+        return substrings.size();
+    }
+
+    private void splitRegexNotMatchedContentResidue(List<String> tmpList, int end, String content, float currentColumnMaxWidth) throws IOException {
+        String residue = content.substring(end);
+        float residueTextWidth = calcStringWidth(residue);
+        if (residueTextWidth > 0) {
+            double rowsNumber = Math.ceil(residueTextWidth / currentColumnMaxWidth - (2 * cellMargin));
+            int rowSymbolsQuantity = (int) Math.floor(residue.length() / rowsNumber);
+            end = 0;
+            for (int i = 0; i < rowsNumber; i++) {
+                if (i == rowsNumber - 1) {
+                    tmpList.add(residue.substring(end));
+                } else {
+                    tmpList.add(residue.substring(0, rowSymbolsQuantity));
+                    end = end + rowSymbolsQuantity;
+                }
+            }
+        }
     }
 
     private PDPageContentStream drawTableHeader(PDPageContentStream stream, float startX, float rowHeight, float lastRawPosition) throws IOException {
@@ -349,7 +360,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     private void adjustLargestRows(float tableMaxWidth) {
         float totalWidth = Math.round(calculateTotalWidth());
-        float marginsTotalLength = tableHeaders.size() * (2 * cellMargin) ;
+        float marginsTotalLength = tableHeaders.size() * (2 * cellMargin);
         float acceptableColumnSize = (tableMaxWidth - marginsTotalLength) / tableHeaders.size();
         Set<String> columns = new HashSet<>();
         while (totalWidth > tableMaxWidth) {
@@ -359,44 +370,51 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 try {
                     String rowWidestColumnValue = tableHeaders.get(widestColumn.get().getKey()).invoke(row).toString();
                     int rowNumber = calcRowNumber(rowWidestColumnValue, acceptableColumnSize);
-                    float currentColumnMinHeight = rowNumber * (currentFontHeight + 2 * cellMargin);
+                    float currentColumnMinHeight = rowNumber * (currentFontHeight + cellMargin);
                     if (rowNumber > 1) {
                         columnWidthMap.put(widestColumn.get().getKey(), acceptableColumnSize);
                         columns.add(widestColumn.get().getKey());
-                        multiLineFieldsHeight.put(row, currentColumnMinHeight);
+                        if (multiLineFieldsHeight.containsKey(row)) {
+                            currentColumnMinHeight = currentColumnMinHeight > multiLineFieldsHeight.get(row) ? currentColumnMinHeight : multiLineFieldsHeight.get(row);
+                        }
                         multiRowColumns.put(row, columns);
+                        multiLineFieldsHeight.put(row, currentColumnMinHeight);
                         totalWidth = Math.round(calculateTotalWidth());
                     }
-                } catch (InvocationTargetException | IllegalAccessException e) {
+                } catch (InvocationTargetException | IllegalAccessException | IOException e) {
                     throw new RuntimeException(e);
                 }
             }
         }
     }
 
-    private int calcRowNumber(String rowWidestColumnValue, float averageColumnWidth) {
-        //String[] splited = rowWidestColumnValue.split("\\)|](?=[a-zA-Z])");
+    private int calcRowNumber(String rowWidestColumnValue, float averageColumnWidth) throws IOException {
         Pattern pattern = Pattern.compile(REGEX_FOR_MOL_NAMES);
         Matcher matcher = pattern.matcher(rowWidestColumnValue);
         StringBuilder sb = new StringBuilder();
-        int rowQuantity = 0;
-        int start = 0;
-        while (matcher.find()) {
-            int end = matcher.end();
-            String currentSubstring = rowWidestColumnValue.substring(start, end);
-            try {
-                if (calcStringWidth(sb + currentSubstring) < averageColumnWidth) {
-                    sb.append(currentSubstring);
-                    start = end;
-                } else {
-                    rowQuantity++;
-                    sb.setLength(0);
+        if (calcStringWidth(rowWidestColumnValue) > averageColumnWidth) {
+            int rowQuantity = 0;
+            int start = 0;
+            int end = 0;
+            while (matcher.find()) {
+                end = matcher.end();
+                String currentSubstring = rowWidestColumnValue.substring(start, end);
+                try {
+                    if (calcStringWidth(sb + currentSubstring + (2 * cellMargin)) < averageColumnWidth) {
+                        sb.append(currentSubstring);
+                        start = end;
+                    } else {
+                        rowQuantity++;
+                        sb.setLength(0);
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
-            } catch (IOException e) {
-                throw new RuntimeException(e);
             }
-        }
-        return rowQuantity == 0 ? 1 : rowQuantity;
+            if (!sb.isEmpty()) ++rowQuantity;
+            //  if (rowQuantity != 0) rowQuantity = rowQuantity + calcResidueRows(end, rowWidestColumnValue, averageColumnWidth);
+            return rowQuantity == 0 ? 1 : rowQuantity;
+        } else return 1;
     }
 
     private float calculateTotalWidth() {
@@ -481,9 +499,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     }
 
     private float calcCenteredTextVerticalPosition(float newLineYHeight, float rowHeight, float cellMargin, String content) {
-        float defaultRowHeight = headerRowHeight - 2 * cellMargin;
-        //return newLineYHeight -rowHeight + rowHeight/2 - defaultRowHeight/2 ;
-        return newLineYHeight - rowHeight + rowHeight / 2 - defaultRowHeight / 2;
+        float defaultRowHeight = headerRowHeight - (2 * cellMargin);
+        return newLineYHeight - rowHeight + (rowHeight / 2) - (defaultRowHeight / 2);
     }
 
     private float calcCenteredTextStartingPosition(float width, String content) throws IOException {

@@ -177,9 +177,11 @@ public class ReportController {
         List<Compound> reactants = reportData.getReactants();
         List<Compound> reagents = reportData.getReagents();
         List<Compound> products = reportData.getProducts();
-        reactants.add(reagents.get(0));
+        if (!reagents.isEmpty()) {
+            reactants.add(reagents.get(0));
+            products.add(reagents.get(0));
+        }
         reactants.add(products.get(0));
-        products.add(reagents.get(0));
         products.add(reactants.get(0));
         PDDocument document = new PDDocument();
         PDPage firstPage = new PDPage(PDRectangle.A5);
@@ -187,8 +189,10 @@ public class ReportController {
         float lastLineYHeight = 0f;
 
         //
+
         PDFTranscoder pdfTranscoder = new PDFTranscoder();
         TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(reportData.getExperiment().svg().getBytes()));
+       // TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(content.getBytes()));
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         //FileOutputStream outputStream = new FileOutputStream("test3.pdf");
         TranscoderOutput output = new TranscoderOutput(outputStream);
