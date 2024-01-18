@@ -46,18 +46,22 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     public static final float DEFAULT_PAGE_SIDE_MARGIN = 20f;
     public static final float DEFAULT_LINE_WIDTH = 0.125f;
     private static final Float DEFAULT_SVG_COLUMN_HEIGHT = 150f;
-    private static final String REGEX_FOR_MOL_NAMES = "\\[|\\]|\\)|\\s|\\((?=[a-zA-Z])|-|";//TODO CORRECT REGULAR EXPRESSION
+    private static final String REGEX_FOR_MOL_NAMES = "\\[|\\]|\\)|\\s|\\((?=[a-zA-Z])|-|";
     private static float DEFAULT_MIN_FONT_SIZE = 6.0f;
     private static final int DEFAULT_A4_PIXEL_WIDTH = 842;
 
     private final PDDocument document;
+    private PDPage pageWithSVG;
+    private PDType1Font font;
     private final List<T> tableRows;
     private final Class<T> clazz;
     private Map<String, Method> tableHeaders;
     private Map<String, Float> columnWidthMap;
-    private PDType1Font font;
+    private Map<String, Float> svgFieldsWidthMap;
+    private final Map<T, Float> multiLineFieldsHeight = new HashMap<>();
+    private final Map<T, Set<String>> multiRowColumns = new HashMap<>();
+    private final Map<T, Map<String, Float>> specificRowColumnContentHeight = new HashMap<>();
     private float rowHeight;
-    private PDPage pageWithSVG;
     private float firstPageAdditionalTopPadding;
     private boolean pageChanged;
     private float currentFontSize;
@@ -66,11 +70,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private float newLineYHeight;
     private boolean drawingHeaders;
     private boolean svgPresent;
-    private Map<String, Float> svgFieldsWidthMap;
     private final float maxSvgColumnWidth;
     private float headerRowHeight;
-    private final Map<T, Float> multiLineFieldsHeight = new HashMap<>();
-    private final Map<T, Set<String>> multiRowColumns = new HashMap<>();
     private float currentFontHeight;
 
 
@@ -103,6 +104,14 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         Method[] methods = clazz.getMethods();
         Field[] fields = clazz.getDeclaredFields();
         fulfillTableHeadersMap(fields, methods);
+        prepareMultiRowColumnsMap(tableRows);
+    }
+
+    private void prepareMultiRowColumnsMap(List<T> tableRows) {
+        for (var row : tableRows) {
+            multiRowColumns.put(row, new HashSet<>());
+            specificRowColumnContentHeight.put(row, new HashMap<>());
+        }
     }
 
     private void fulfillTableHeadersMap(Field[] fields, Method[] methods) {
@@ -122,8 +131,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         }
     }
 
-    //TODO check this logic
-    private Optional<Float> calculateSVGWidth(Field field, String attribute) {
+    private Optional<Float> calculateSVGWidth(Field field, String width) {
         field.setAccessible(true);
         return tableRows.stream()
                 .map(t -> {
@@ -133,7 +141,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                         throw new RuntimeException("SVG width calculation problem");
                     }
                 }).filter(Objects::nonNull)
-                .map(svg -> getSizeAttributeValueFromSVG(svg, attribute))
+                .map(svg -> getSizeAttributeValueFromSVG(svg, width))
                 .max(Float::compare)
                 .map(a -> Float.min(a, maxSvgColumnWidth));
     }
@@ -164,31 +172,35 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         float lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
 
         adjustFont(tableMaxWidth, stream);
-        int rowNumber = 1;
+        if (newLineYHeight < DEFAULT_PAGE_VERTICAL_MARGIN + headerRowHeight) newLineYHeight = -1;
         stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
         if (pageChanged) {
             this.newLineYHeight = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
         }
-        stream = drawTableRaws(stream, startX, rowHeight, rowNumber, lastRawPosition);
+        stream = drawTableRaws(stream, startX, lastRawPosition);
         pageChanged = false;
         stream.close();
         return newLineYHeight;
     }
 
-    private PDPageContentStream drawTableRaws(PDPageContentStream stream, float startX, float rowHeight, int rowNumber, float lastRawPosition) throws InvocationTargetException, IllegalAccessException, IOException {
+    private PDPageContentStream drawTableRaws(PDPageContentStream stream, float startX, float lastRawPosition) throws InvocationTargetException, IllegalAccessException, IOException {
         for (T t : tableRows) {
-            this.newLineYHeight = newLineYHeight - rowHeight;
-            if (lastRawPosition > newLineYHeight) {
+            float currentRowMaxHeight = headerRowHeight;
+            if (specificRowColumnContentHeight.containsKey(t)) {
+                currentRowMaxHeight = specificRowColumnContentHeight.get(t).values().stream()
+                        .max(Float::compareTo)
+                        .orElse(headerRowHeight);
+            }
+            if (lastRawPosition > newLineYHeight - currentRowMaxHeight) {
                 stream.close();
                 stream = addNextPage(stream);
                 this.newLineYHeight = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
                 startX = DEFAULT_PAGE_SIDE_MARGIN;
                 lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
-                stream = drawTableHeader(stream, startX, rowHeight, lastRawPosition);
+                stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
                 this.newLineYHeight = newLineYHeight - rowHeight;
             }
             drawRow(stream, cellMargin, startX, t);
-            rowNumber++;
         }
         return stream;
     }
@@ -207,7 +219,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 startX = startX + svgFieldsWidthMap.get(columnName) + cellMargin * 2;
             } else {
                 //TODO debug and prevent add column separation + calculate width before row draw
-                if (multiRowColumns.containsKey(t) && multiRowColumns.get(t).contains(columnName)) {
+                //TODO Minus widest column and plus 0.15 of the page width instead and check, if acceptable value obtained - calc coefficient and if not - repeat with the next widest row
+                if (multiRowColumns.get(t).contains(columnName)) {
                     //TODO DEBUG strangePostMan results  if(nextRowYHeight == newLineYHeight) nextRowYHeight = multiLineFieldsHeight.get(t);
                     startX = drawMultiRowCell(stream, startX, columnName, newLineYHeight - nextRowYHeight, content.toString(), tableWidthCoefficient, REGEX_FOR_MOL_NAMES, t);
                 } else {
@@ -215,9 +228,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 }
             }
         }
-        if (svgPresent) {
+        if (svgPresent && !pageChanged) {
             newLineYHeight = nextRowYHeight;
-            //TODO compare svg height with multiline rows
         }
     }
 
@@ -252,6 +264,9 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         // float currentContentHeight = multiLineFieldsHeight.get(t);
         // float verticalCenterPoint = calcCenteredTextVerticalPosition(newLineYHeight, currentContentHeight, cellMargin, content);
         float contentHeight = multiLineFieldsHeight.get(t);
+        if (specificRowColumnContentHeight.containsKey(t) && specificRowColumnContentHeight.get(t).containsKey(columnName)) {
+            contentHeight = specificRowColumnContentHeight.get(t).get(columnName);
+        }
         float verticalPadding = (rowHeight - contentHeight) / 2;
         float currentStartPoint = newLineYHeight - rowHeight + verticalPadding + contentHeight;
         for (var line : words) {
@@ -287,13 +302,18 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     private PDPageContentStream drawTableHeader(PDPageContentStream stream, float startX, float rowHeight, float lastRawPosition) throws IOException {
         drawingHeaders = true;
-        if (lastRawPosition > newLineYHeight) {
+        Optional<T> first = tableRows.stream().findFirst();
+        float minNextRowHeight = headerRowHeight;
+        if (first.isPresent() && specificRowColumnContentHeight.containsKey(first)) {
+            minNextRowHeight = minNextRowHeight + specificRowColumnContentHeight.get(first).values().stream().max(Float::compareTo).orElse(0f);
+        }
+        if (lastRawPosition > newLineYHeight - minNextRowHeight) {
             stream = addNextPage(stream);
             pageChanged = true;
             this.newLineYHeight = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
             startX = DEFAULT_PAGE_SIDE_MARGIN;
             lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
-            drawTableHeader(stream, startX, rowHeight, lastRawPosition);
+            drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
         }
         if (svgPresent) {
             Comparator<String> comparator = Comparator.comparing(entry -> svgFieldsWidthMap.containsKey(entry) ? 0 : 1);
@@ -362,22 +382,22 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         float totalWidth = Math.round(calculateTotalWidth());
         float marginsTotalLength = tableHeaders.size() * (2 * cellMargin);
         float acceptableColumnSize = (tableMaxWidth - marginsTotalLength) / tableHeaders.size();
-        Set<String> columns = new HashSet<>();
         while (totalWidth > tableMaxWidth) {
             Optional<Map.Entry<String, Float>> widestColumn = columnWidthMap.entrySet().stream()
                     .max(Map.Entry.comparingByValue());
             for (var row : tableRows) {
                 try {
-                    String rowWidestColumnValue = tableHeaders.get(widestColumn.get().getKey()).invoke(row).toString();
+                    String columnName = widestColumn.get().getKey();
+                    String rowWidestColumnValue = tableHeaders.get(columnName).invoke(row).toString();
                     int rowNumber = calcRowNumber(rowWidestColumnValue, acceptableColumnSize);
                     float currentColumnMinHeight = rowNumber * (currentFontHeight + cellMargin);
+                    specificRowColumnContentHeight.get(row).put(columnName, currentColumnMinHeight);
                     if (rowNumber > 1) {
-                        columnWidthMap.put(widestColumn.get().getKey(), acceptableColumnSize);
-                        columns.add(widestColumn.get().getKey());
+                        columnWidthMap.put(columnName, acceptableColumnSize);
+                        multiRowColumns.get(row).add(columnName);
                         if (multiLineFieldsHeight.containsKey(row)) {
                             currentColumnMinHeight = currentColumnMinHeight > multiLineFieldsHeight.get(row) ? currentColumnMinHeight : multiLineFieldsHeight.get(row);
                         }
-                        multiRowColumns.put(row, columns);
                         multiLineFieldsHeight.put(row, currentColumnMinHeight);
                         totalWidth = Math.round(calculateTotalWidth());
                     }

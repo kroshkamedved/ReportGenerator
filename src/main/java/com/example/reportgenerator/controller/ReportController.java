@@ -1,9 +1,9 @@
 package com.example.reportgenerator.controller;
 
-import com.example.reportgenerator.util.PDFUtil;
-import com.example.reportgenerator.util.TableGenerator;
 import com.example.reportgenerator.domain.Compound;
 import com.example.reportgenerator.dto.ReportDTO;
+import com.example.reportgenerator.util.PDFUtil;
+import com.example.reportgenerator.util.TableGenerator;
 import org.apache.batik.transcoder.TranscoderException;
 import org.apache.batik.transcoder.TranscoderInput;
 import org.apache.batik.transcoder.TranscoderOutput;
@@ -33,7 +33,6 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
-import java.util.Optional;
 
 @RestController()
 @RequestMapping("/report")

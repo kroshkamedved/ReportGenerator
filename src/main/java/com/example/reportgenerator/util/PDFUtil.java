@@ -57,7 +57,7 @@ public class PDFUtil {
                     doc.addPage(newPage);
                     contentStream.close();
                     contentStream = new PDPageContentStream(doc, newPage, PDPageContentStream.AppendMode.APPEND, true);
-                    newLineYHeight = newPage.getMediaBox().getHeight() - verticalPageMargin - rowHeight;
+                    newLineYHeight = newPage.getMediaBox().getHeight() - verticalPageMargin;
                     contentStream.setFont(font, fontSize);
                     contentStream.beginText();
                     contentStream.newLineAtOffset(sideMargin, newLineYHeight);
@@ -69,7 +69,7 @@ public class PDFUtil {
                 } else if ((font.getStringWidth(stringBuilder + " " + word) / 1000) * fontSize > lineMaxWidth) {
                     contentStream.newLineAtOffset(0, -rowHeight);
                     contentStream.showText(stringBuilder.toString());
-                    newLineYHeight = newLineYHeight - rowHeight / 2;
+                    newLineYHeight = newLineYHeight - rowHeight;
                     stringBuilder.setLength(0);
                 }
                 stringBuilder.append(word).append('\s');
@@ -124,10 +124,8 @@ public class PDFUtil {
             stream.addRect(startX, newLineYHeight, maxWidth + sideMargin * 2, currentRowHeight + verticalMargin * 2);
             stream.stroke();
             stream.close();
-        } catch (IOException e) {
+        } catch (IOException | TranscoderException e) {
             LoggerFactory.getLogger(PDFUtil.class).error("error during paragraph printing");
-        } catch (TranscoderException e) {
-            throw new RuntimeException(e);
         }
         return newLineYHeight;
     }
