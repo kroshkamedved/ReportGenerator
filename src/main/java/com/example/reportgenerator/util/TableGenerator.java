@@ -67,7 +67,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private float currentFontSize;
     private float tableWidthCoefficient = 1;
     private float cellMargin;
-    private float newLineYHeight;
+    private float currentYTopValue;
     private boolean drawingHeaders;
     private boolean svgPresent;
     private final float maxSvgColumnWidth;
@@ -159,11 +159,11 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         if (pageWithSVG != null) {
             pdRectangle = pageWithSVG.getMediaBox();
             page = pageWithSVG;
-            this.newLineYHeight = page.getMediaBox().getHeight() - firstPageAdditionalTopPadding - DEFAULT_PAGE_VERTICAL_MARGIN;
+            this.currentYTopValue = page.getMediaBox().getHeight() - firstPageAdditionalTopPadding - DEFAULT_PAGE_VERTICAL_MARGIN;
             pageWithSVG = null;
         } else {
             page = new PDPage(pdRectangle);
-            this.newLineYHeight = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
+            this.currentYTopValue = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
             document.addPage(page);
         }
         PDPageContentStream stream = new PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true);
@@ -172,15 +172,12 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         float lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
 
         adjustFont(tableMaxWidth, stream);
-        if (newLineYHeight < DEFAULT_PAGE_VERTICAL_MARGIN + headerRowHeight) newLineYHeight = -1;
+        if (currentYTopValue < DEFAULT_PAGE_VERTICAL_MARGIN + headerRowHeight + page.getMediaBox().getHeight()/10) currentYTopValue = -1;
         stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
-        if (pageChanged) {
-            this.newLineYHeight = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
-        }
         stream = drawTableRaws(stream, startX, lastRawPosition);
         pageChanged = false;
         stream.close();
-        return newLineYHeight;
+        return currentYTopValue;
     }
 
     private PDPageContentStream drawTableRaws(PDPageContentStream stream, float startX, float lastRawPosition) throws InvocationTargetException, IllegalAccessException, IOException {
@@ -191,14 +188,14 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                         .max(Float::compareTo)
                         .orElse(headerRowHeight);
             }
-            if (lastRawPosition > newLineYHeight - currentRowMaxHeight) {
+            if (lastRawPosition > currentYTopValue - currentRowMaxHeight) {
                 stream.close();
                 stream = addNextPage(stream);
-                this.newLineYHeight = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
+                this.currentYTopValue = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
                 startX = DEFAULT_PAGE_SIDE_MARGIN;
                 lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
                 stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
-                this.newLineYHeight = newLineYHeight - rowHeight;
+                this.currentYTopValue = currentYTopValue - rowHeight;
             }
             drawRow(stream, cellMargin, startX, t);
         }
@@ -206,7 +203,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     }
 
     private void drawRow(PDPageContentStream stream, float cellMargin, float startX, T t) throws InvocationTargetException, IllegalAccessException, IOException {
-        float nextRowYHeight = newLineYHeight;
+        float nextRowYHeight = currentYTopValue;
         for (String columnName : tableHeaders.keySet()) {
             Object content = tableHeaders.get(columnName).invoke(t);
             if (content == null) content = "";
@@ -215,21 +212,19 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 if (multiLineFieldsHeight.containsKey(t)) {
                     multiRowMaxColumnHeight = multiLineFieldsHeight.get(t);
                 }
-                nextRowYHeight = PDFUtil.drawSVGStructure(document, startX, content.toString(), cellMargin, cellMargin, svgFieldsWidthMap.get(columnName), newLineYHeight, this, multiRowMaxColumnHeight);
+                nextRowYHeight = PDFUtil.drawSVGStructure(document, startX, content.toString(), cellMargin, cellMargin, svgFieldsWidthMap.get(columnName), currentYTopValue, this, multiRowMaxColumnHeight);
                 startX = startX + svgFieldsWidthMap.get(columnName) + cellMargin * 2;
             } else {
-                //TODO debug and prevent add column separation + calculate width before row draw
                 //TODO Minus widest column and plus 0.15 of the page width instead and check, if acceptable value obtained - calc coefficient and if not - repeat with the next widest row
                 if (multiRowColumns.get(t).contains(columnName)) {
-                    //TODO DEBUG strangePostMan results  if(nextRowYHeight == newLineYHeight) nextRowYHeight = multiLineFieldsHeight.get(t);
-                    startX = drawMultiRowCell(stream, startX, columnName, newLineYHeight - nextRowYHeight, content.toString(), tableWidthCoefficient, REGEX_FOR_MOL_NAMES, t);
+                    startX = drawMultiRowCell(stream, startX, columnName, currentYTopValue - nextRowYHeight, content.toString(), tableWidthCoefficient, REGEX_FOR_MOL_NAMES, t);
                 } else {
-                    startX = drawCell(stream, startX, columnName, newLineYHeight - nextRowYHeight, content.toString(), tableWidthCoefficient);
+                    startX = drawCell(stream, startX, columnName, currentYTopValue - nextRowYHeight, content.toString(), tableWidthCoefficient);
                 }
             }
         }
-        if (svgPresent && !pageChanged) {
-            newLineYHeight = nextRowYHeight;
+        if (svgPresent) {
+            currentYTopValue = nextRowYHeight;
         }
     }
 
@@ -260,7 +255,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         //  splitRegexNotMatchedContentResidue(tmpList, end, content, currentColumnMaxWidth);
         String[] words = new String[tmpList.size()];
         words = tmpList.toArray(words);
-        drawRectangle(columnName, stream, startX, newLineYHeight, rowHeight, tableWidthCoefficient);
+        drawRectangle(columnName, stream, startX, currentYTopValue, rowHeight, tableWidthCoefficient);
         // float currentContentHeight = multiLineFieldsHeight.get(t);
         // float verticalCenterPoint = calcCenteredTextVerticalPosition(newLineYHeight, currentContentHeight, cellMargin, content);
         float contentHeight = multiLineFieldsHeight.get(t);
@@ -268,7 +263,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
             contentHeight = specificRowColumnContentHeight.get(t).get(columnName);
         }
         float verticalPadding = (rowHeight - contentHeight) / 2;
-        float currentStartPoint = newLineYHeight - rowHeight + verticalPadding + contentHeight;
+        float currentStartPoint = currentYTopValue - rowHeight + verticalPadding + contentHeight;
         for (var line : words) {
             drawMultiRowContent(stream, startX, columnName, currentStartPoint - headerRowHeight + cellMargin, line, tableWidthCoefficient); // TODO hard calculations almost hardcoding
             currentStartPoint = currentStartPoint - headerRowHeight;
@@ -304,16 +299,15 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         drawingHeaders = true;
         Optional<T> first = tableRows.stream().findFirst();
         float minNextRowHeight = headerRowHeight;
-        if (first.isPresent() && specificRowColumnContentHeight.containsKey(first)) {
-            minNextRowHeight = minNextRowHeight + specificRowColumnContentHeight.get(first).values().stream().max(Float::compareTo).orElse(0f);
+        if (first.isPresent() && specificRowColumnContentHeight.containsKey(first.get())) {
+            minNextRowHeight = minNextRowHeight + specificRowColumnContentHeight.get(first.get()).values().stream().max(Float::compareTo).orElse(0f);
         }
-        if (lastRawPosition > newLineYHeight - minNextRowHeight) {
+        if (lastRawPosition > currentYTopValue - minNextRowHeight) {
             stream = addNextPage(stream);
             pageChanged = true;
-            this.newLineYHeight = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
+            this.currentYTopValue = document.getPage(0).getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
             startX = DEFAULT_PAGE_SIDE_MARGIN;
             lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
-            drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
         }
         if (svgPresent) {
             Comparator<String> comparator = Comparator.comparing(entry -> svgFieldsWidthMap.containsKey(entry) ? 0 : 1);
@@ -334,7 +328,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
             startX = drawCell(stream, startX, string, rowHeight, string, tableWidthCoefficient);
         }
         drawingHeaders = false;
-        this.newLineYHeight = newLineYHeight - rowHeight;
+        this.currentYTopValue = currentYTopValue - rowHeight;
         return stream;
     }
 
@@ -469,7 +463,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
      *
      */
     public float drawCell(PDPageContentStream contentStream, float x, String columnName, float rowHeight, String content, float tableWidthCoefficient) throws IOException {
-        drawRectangle(columnName, contentStream, x, newLineYHeight, rowHeight, tableWidthCoefficient);
+        drawRectangle(columnName, contentStream, x, currentYTopValue, rowHeight, tableWidthCoefficient);
         return drawContent(contentStream, x, columnName, rowHeight, content, tableWidthCoefficient);
     }
 
@@ -483,7 +477,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         contentStream.setFont(font, currentFontSize);
         contentStream.beginText();
         contentStream.setNonStrokingColor(Color.black);
-        contentStream.newLineAtOffset(startX + contentDependentHorizontalShift, calcCenteredTextVerticalPosition(newLineYHeight, rowHeight, cellMargin, content));
+        contentStream.newLineAtOffset(startX + contentDependentHorizontalShift, calcCenteredTextVerticalPosition(currentYTopValue, rowHeight, cellMargin, content));
         contentStream.showText(content);
         contentStream.endText();
         return startX + (columnWidthMap.get(columnName) + 2 * cellMargin) * tableWidthCoefficient;

@@ -172,7 +172,7 @@ public class ReportController {
             """;
 
     @PostMapping(path = "/pdf", produces = "application/pdf", headers = {HttpHeaders.CONTENT_DISPOSITION + "=attachment; filename=report.pdf"})
-    public ByteArrayResource generatePDF(@RequestBody ReportDTO reportData) throws IOException, InvocationTargetException, IllegalAccessException, TranscoderException, InterruptedException {
+    public ByteArrayResource generatePDF(@RequestBody ReportDTO reportData) throws IOException, InvocationTargetException, IllegalAccessException, TranscoderException {
         List<Compound> reactants = reportData.getReactants();
         List<Compound> reagents = reportData.getReagents();
         List<Compound> products = reportData.getProducts();
@@ -187,11 +187,20 @@ public class ReportController {
         document.addPage(firstPage);
         float lastLineYHeight = 0f;
 
+        PDPageContentStream str = new PDPageContentStream(document, firstPage, PDPageContentStream.AppendMode.APPEND, true);
+        str.setFont(new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 9);
+        str.beginText();
+        str.newLineAtOffset(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, firstPage.getMediaBox().getHeight() - TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN + 5f);
+        str.showText("Experiment id : " + reportData.getExperiment().id());
+        str.endText();
+        str.close();
+
+
         //
 
         PDFTranscoder pdfTranscoder = new PDFTranscoder();
         TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(reportData.getExperiment().svg().getBytes()));
-       // TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(content.getBytes()));
+        // TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(content.getBytes()));
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         //FileOutputStream outputStream = new FileOutputStream("test3.pdf");
         TranscoderOutput output = new TranscoderOutput(outputStream);
@@ -212,7 +221,8 @@ public class ReportController {
             scaleY = 1;
         }
         float x = firstPage.getMediaBox().getWidth() / 2 - (pageWithSVG.getMediaBox().getWidth() * scaleX) / 2;
-        float y = firstPage.getMediaBox().getHeight() - 2 * 20f - (pageWithSVG.getBBox().getHeight() * scaleY);
+        float y = firstPage.getMediaBox().getHeight() - 2 * TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN - (pageWithSVG.getBBox().getHeight() * scaleY);
+
 
         matrix.translate(x, y);
         matrix.scale(scaleX, scaleY);
