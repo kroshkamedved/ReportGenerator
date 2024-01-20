@@ -127,7 +127,25 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 maxCurrentColumnSVGWidth.ifPresent(aFloat -> svgFieldsWidthMap.put(methodName, aFloat));
             }
             if (svgPresent && svgFieldsWidthMap.isEmpty()) svgPresent = false;
-            Arrays.stream(methods).filter(method -> method.getName().equals(methodName)).findAny().ifPresent(method -> tableHeaders.put(field.getName(), method));
+            Optional<String> notEmptyColumn = tableRows.stream()
+                    .map(obj -> {
+                        try {
+                            field.setAccessible(true);
+                            return field.get(obj);
+                        } catch (IllegalAccessException e) {
+                            throw new RuntimeException(e);
+                        }
+                    })
+                    .filter(Objects::nonNull)
+                    .map(Object::toString)
+                    .filter(str -> !str.isEmpty())
+                    .findAny();
+            if (notEmptyColumn.isPresent()) {
+                Arrays.stream(methods)
+                        .filter(method -> method.getName().equals(methodName))
+                        .findAny()
+                        .ifPresent(method -> tableHeaders.put(field.getName(), method));
+            }
         }
     }
 
@@ -172,7 +190,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         float lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
 
         adjustFont(tableMaxWidth, stream);
-        if (currentYTopValue < DEFAULT_PAGE_VERTICAL_MARGIN + headerRowHeight + page.getMediaBox().getHeight()/10) currentYTopValue = -1;
+        if (currentYTopValue < DEFAULT_PAGE_VERTICAL_MARGIN + headerRowHeight + PDRectangle.A4.getHeight() / 9)
+            currentYTopValue = -1;
         stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
         stream = drawTableRaws(stream, startX, lastRawPosition);
         pageChanged = false;
@@ -197,16 +216,25 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
                 this.currentYTopValue = currentYTopValue - rowHeight;
             }
+            float yPositionBeforeRowDrawn = currentYTopValue;
             drawRow(stream, cellMargin, startX, t);
+            if (yPositionBeforeRowDrawn == currentYTopValue) currentYTopValue = currentYTopValue - headerRowHeight;
         }
         return stream;
     }
 
     private void drawRow(PDPageContentStream stream, float cellMargin, float startX, T t) throws InvocationTargetException, IllegalAccessException, IOException {
-        float nextRowYHeight = currentYTopValue;
+        float nextRowYHeight = currentYTopValue - headerRowHeight;
         for (String columnName : tableHeaders.keySet()) {
             Object content = tableHeaders.get(columnName).invoke(t);
-            if (content == null) content = "";
+            if (content == null) {
+                content = "";
+//                if (multiLineFieldsHeight.containsKey(t)) {
+//                    nextRowYHeight = multiLineFieldsHeight.get(t);
+//                } else {
+//                    nextRowYHeight = headerRowHeight;
+//                }
+            }
             if (svgPresent && svgFieldsWidthMap.containsKey(columnName)) {
                 float multiRowMaxColumnHeight = 0f;
                 if (multiLineFieldsHeight.containsKey(t)) {

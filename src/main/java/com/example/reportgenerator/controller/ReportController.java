@@ -194,53 +194,54 @@ public class ReportController {
         str.showText("Experiment id : " + reportData.getExperiment().id());
         str.endText();
         str.close();
-
+        float y = firstPage.getMediaBox().getHeight();
 
         //
+        if(reportData.getExperiment().svg() != null){
 
-        PDFTranscoder pdfTranscoder = new PDFTranscoder();
-        TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(reportData.getExperiment().svg().getBytes()));
-        // TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(content.getBytes()));
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        //FileOutputStream outputStream = new FileOutputStream("test3.pdf");
-        TranscoderOutput output = new TranscoderOutput(outputStream);
-        pdfTranscoder.transcode(input, output);
+            PDFTranscoder pdfTranscoder = new PDFTranscoder();
+            TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(reportData.getExperiment().svg().getBytes()));
+            // TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(content.getBytes()));
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            //FileOutputStream outputStream = new FileOutputStream("test3.pdf");
+            TranscoderOutput output = new TranscoderOutput(outputStream);
+            pdfTranscoder.transcode(input, output);
+            PDDocument transcodedSvgToPDF = Loader.loadPDF(outputStream.toByteArray());
+            //PDDocument transcodedSvgToPDF = Loader.loadPDF(new File("test3.pdf"));
+            PDPage pageWithSVG = transcodedSvgToPDF.getPage(0);
+            PDFormXObject object = new PDFormXObject(new PDStream(transcodedSvgToPDF, pageWithSVG.getContents()));
+            //PDFormXObject object = new PDFormXObject(new PDStream(doc, pageWithSVG.getContents()));
+            object.setResources(pageWithSVG.getResources());
+            object.setBBox(pageWithSVG.getBBox());
+            AffineTransform matrix = object.getMatrix().createAffineTransform();
+            float scaleX = (firstPage.getMediaBox().getWidth() - (TableGenerator.DEFAULT_PAGE_SIDE_MARGIN * 4)) / pageWithSVG.getMediaBox().getWidth();
+            float scaleY = (firstPage.getMediaBox().getWidth() - (20f * 4)) / pageWithSVG.getMediaBox().getWidth();
+            if (scaleY > 1 || scaleX > 1) {
+                scaleX = 1;
+                scaleY = 1;
+            }
+            float x = firstPage.getMediaBox().getWidth() / 2 - (pageWithSVG.getMediaBox().getWidth() * scaleX) / 2;
+             y = firstPage.getMediaBox().getHeight() - 2 * TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN - (pageWithSVG.getBBox().getHeight() * scaleY);
 
-        PDDocument transcodedSvgToPDF = Loader.loadPDF(outputStream.toByteArray());
-        //PDDocument transcodedSvgToPDF = Loader.loadPDF(new File("test3.pdf"));
-        PDPage pageWithSVG = transcodedSvgToPDF.getPage(0);
-        PDFormXObject object = new PDFormXObject(new PDStream(transcodedSvgToPDF, pageWithSVG.getContents()));
-        //PDFormXObject object = new PDFormXObject(new PDStream(doc, pageWithSVG.getContents()));
-        object.setResources(pageWithSVG.getResources());
-        object.setBBox(pageWithSVG.getBBox());
-        AffineTransform matrix = object.getMatrix().createAffineTransform();
-        float scaleX = (firstPage.getMediaBox().getWidth() - (TableGenerator.DEFAULT_PAGE_SIDE_MARGIN * 4)) / pageWithSVG.getMediaBox().getWidth();
-        float scaleY = (firstPage.getMediaBox().getWidth() - (20f * 4)) / pageWithSVG.getMediaBox().getWidth();
-        if (scaleY > 1 || scaleX > 1) {
-            scaleX = 1;
-            scaleY = 1;
-        }
-        float x = firstPage.getMediaBox().getWidth() / 2 - (pageWithSVG.getMediaBox().getWidth() * scaleX) / 2;
-        float y = firstPage.getMediaBox().getHeight() - 2 * TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN - (pageWithSVG.getBBox().getHeight() * scaleY);
 
+            matrix.translate(x, y);
+            matrix.scale(scaleX, scaleY);
+            object.setMatrix(matrix);
+            object.setFormType(1);
 
-        matrix.translate(x, y);
-        matrix.scale(scaleX, scaleY);
-        object.setMatrix(matrix);
-        object.setFormType(1);
-
-        PDPageContentStream stream = new PDPageContentStream(document, firstPage, PDPageContentStream.AppendMode.APPEND, true);
-        stream.drawForm(object);
+            PDPageContentStream stream = new PDPageContentStream(document, firstPage, PDPageContentStream.AppendMode.APPEND, true);
+            stream.drawForm(object);
 //        stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 20f);
 //        stream.beginText();
 //        stream.newLineAtOffset(50, 150);
 //        stream.showText("test test test test test test");
 //        stream.endText();
-        stream.setLineWidth(0.5f);
-        stream.addRect(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, y - TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN, firstPage.getMediaBox().getWidth() - 2 * TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, pageWithSVG.getMediaBox().getHeight() * scaleY + 2 * TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN);
-        // stream.addRect(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, firstPage.getMediaBox().getHeight() - (2 * 20f + 0.5f * 20f) - (pageWithSVG.getBBox().getHeight() * scaleY), pageWithSVG.getMediaBox().getWidth() * scaleX + TableGenerator.DEFAULT_PAGE_SIDE_MARGIN * 2, (pageWithSVG.getMediaBox().getHeight() * scaleY) + 20f);
-        stream.stroke();
-        stream.close();
+            stream.setLineWidth(0.5f);
+            stream.addRect(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, y - TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN, firstPage.getMediaBox().getWidth() - 2 * TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, pageWithSVG.getMediaBox().getHeight() * scaleY + 2 * TableGenerator.DEFAULT_PAGE_VERTICAL_MARGIN);
+            // stream.addRect(TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, firstPage.getMediaBox().getHeight() - (2 * 20f + 0.5f * 20f) - (pageWithSVG.getBBox().getHeight() * scaleY), pageWithSVG.getMediaBox().getWidth() * scaleX + TableGenerator.DEFAULT_PAGE_SIDE_MARGIN * 2, (pageWithSVG.getMediaBox().getHeight() * scaleY) + 20f);
+            stream.stroke();
+            stream.close();
+        }
 
         //
 
@@ -261,7 +262,7 @@ public class ReportController {
         // document.save("paintedAsItShouldBeNextLine.pdf");
 
         lastLineYHeight = PDFUtil.drawParagraph(document, lastLineYHeight, new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN), 10, "PROCEDURE:", TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f, true);
-        String fontPath = "src/main/resources/static/NotoSans-Medium.ttf";
+        String fontPath = "src/main/resources/static/Roboto-LightItalic.ttf";
         PDFont font = PDType0Font.load(document, new File(fontPath));
         lastLineYHeight = PDFUtil.drawParagraph(document, lastLineYHeight, font, 8, reportData.getExperiment().comment(), TableGenerator.DEFAULT_PAGE_SIDE_MARGIN, 20f, false);
 

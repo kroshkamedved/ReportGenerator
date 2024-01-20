@@ -90,35 +90,42 @@ public class PDFUtil {
         TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(content.getBytes()));
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         TranscoderOutput output = new TranscoderOutput(outputStream);
+        PDPageContentStream stream = null;
+        float currentRowHeight = minHeight;
         try {
-            pdfTranscoder.transcode(input, output);
-            PDDocument transcodedSvgToPDF = Loader.loadPDF(outputStream.toByteArray());
-            PDPage pageWithSVG = transcodedSvgToPDF.getPage(0);
-            PDFormXObject object = new PDFormXObject(new PDStream(transcodedSvgToPDF, pageWithSVG.getContents()));
-            object.setResources(pageWithSVG.getResources());
-            object.setBBox(pageWithSVG.getBBox());
-            AffineTransform matrix = object.getMatrix().createAffineTransform();
-            float svgWidth = pageWithSVG.getMediaBox().getWidth();
-            float scaleX = maxWidth / (svgWidth);
-            float scaleY = 1;
-            if (scaleX > 1) {
-                scaleX = 1;
+            if (!content.isEmpty()) {
+                pdfTranscoder.transcode(input, output);
+                PDDocument transcodedSvgToPDF = Loader.loadPDF(outputStream.toByteArray());
+                PDPage pageWithSVG = transcodedSvgToPDF.getPage(0);
+                PDFormXObject object = new PDFormXObject(new PDStream(transcodedSvgToPDF, pageWithSVG.getContents()));
+                object.setResources(pageWithSVG.getResources());
+                object.setBBox(pageWithSVG.getBBox());
+                AffineTransform matrix = object.getMatrix().createAffineTransform();
+                float svgWidth = pageWithSVG.getMediaBox().getWidth();
+                float scaleX = maxWidth / (svgWidth);
+                float scaleY = 1;
+                if (scaleX > 1) {
+                    scaleX = 1;
+                } else {
+                    scaleY = scaleX;
+                }
+                currentRowHeight = pageWithSVG.getBBox().getHeight() * scaleY;
+                float originalScaledHeight = currentRowHeight;
+                currentRowHeight = Math.max(currentRowHeight, minHeight);
+
+                newLineYHeight = newLineYHeight - currentRowHeight - (2 * verticalMargin);
+                float shift = (maxWidth - (pageWithSVG.getMediaBox().getWidth() * scaleX)) / 2;
+                matrix.translate(startX + shift + sideMargin, newLineYHeight + ((currentRowHeight - originalScaledHeight) / 2) + verticalMargin);
+                matrix.scale(scaleX, scaleY);
+                object.setMatrix(matrix);
+                object.setFormType(1);
+
+                stream = new PDPageContentStream(doc, lastPage, PDPageContentStream.AppendMode.APPEND, true);
+                stream.drawForm(object);
             } else {
-                scaleY = scaleX;
+                stream = new PDPageContentStream(doc, lastPage, PDPageContentStream.AppendMode.APPEND, true);
+                newLineYHeight = newLineYHeight - currentRowHeight - (2 * verticalMargin);
             }
-            float currentRowHeight = pageWithSVG.getBBox().getHeight() * scaleY;
-            float originalScaledHeight = currentRowHeight;
-            currentRowHeight = Math.max(currentRowHeight, minHeight);
-
-            newLineYHeight = newLineYHeight - currentRowHeight - (2 * verticalMargin);
-            float shift = (maxWidth - (pageWithSVG.getMediaBox().getWidth() * scaleX)) / 2;
-            matrix.translate(startX + shift + sideMargin, newLineYHeight + ((currentRowHeight - originalScaledHeight) / 2) + verticalMargin);
-            matrix.scale(scaleX, scaleY);
-            object.setMatrix(matrix);
-            object.setFormType(1);
-
-            PDPageContentStream stream = new PDPageContentStream(doc, lastPage, PDPageContentStream.AppendMode.APPEND, true);
-            stream.drawForm(object);
             stream.setStrokingColor(Color.black);
             stream.setLineWidth(0.125f);
             stream.addRect(startX, newLineYHeight, maxWidth + sideMargin * 2, currentRowHeight + verticalMargin * 2);
