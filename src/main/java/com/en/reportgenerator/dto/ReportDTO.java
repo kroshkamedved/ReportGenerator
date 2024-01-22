@@ -1,7 +1,7 @@
-package com.example.reportgenerator.dto;
+package com.en.reportgenerator.dto;
 
-import com.example.reportgenerator.domain.Compound;
-import com.example.reportgenerator.domain.Experiment;
+import com.en.reportgenerator.domain.Compound;
+import com.en.reportgenerator.domain.Experiment;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;

@@ -1,4 +1,4 @@
-package com.example.reportgenerator.domain;
+package com.en.reportgenerator.domain;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

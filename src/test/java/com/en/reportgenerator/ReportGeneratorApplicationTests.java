@@ -1,4 +1,4 @@
-package com.example.reportgenerator;
+package com.en.reportgenerator;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

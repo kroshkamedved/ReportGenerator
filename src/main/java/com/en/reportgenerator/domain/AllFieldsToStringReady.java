@@ -1,4 +1,4 @@
-package com.example.reportgenerator.domain;
+package com.en.reportgenerator.domain;
 
 /**
  * Marker interface which illustrates that class which implemented this interface confirms that every field

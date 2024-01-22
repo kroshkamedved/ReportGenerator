@@ -1,6 +1,5 @@
-package com.example.reportgenerator.util;
+package com.en.reportgenerator.util;
 
-import com.example.reportgenerator.domain.AllFieldsToStringReady;
 import org.apache.batik.transcoder.TranscoderException;
 import org.apache.batik.transcoder.TranscoderInput;
 import org.apache.batik.transcoder.TranscoderOutput;
@@ -12,7 +11,6 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
-import org.slf4j.LoggerFactory;
 
 import java.awt.*;
 import java.awt.geom.AffineTransform;
@@ -21,19 +19,22 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 public class PDFUtil {
+    private static final float DEFAULT_BORDER_LINE_WIDTH = 0.125f;
+
     /**
-     * @param doc                PDF document where to print text
-     * @param newLineYHeight     vertical position on the last document page where paragraph starts
-     * @param font
-     * @param fontSize
-     * @param content
-     * @param sideMargin
-     * @param verticalPageMargin
-     * @return Y height of the last line in the document
+     * @param doc                The PDF document where the text will be printed
+     * @param currentYTopValue   The vertical position on the last page of the document where the paragraph starts
+     * @param font               The font to be used for printing the text
+     * @param fontSize           The size of the font to be used for printing the text
+     * @param content            The content of the paragraph to be printed
+     * @param sideMargin         The margin to be left on the sides of the page
+     * @param verticalPageMargin The margin to be left at the top and bottom of the page
+     * @param heading            A boolean value indicating whether the content is a single-line heading or a multi-line paragraph
+     * @return The height (in the Y-direction) of the last line of the paragraph in the document
      */
-    public static float drawParagraph(PDDocument doc, float newLineYHeight, PDFont font,
-                                      float fontSize, String content,
-                                      float sideMargin, float verticalPageMargin, boolean heading) {
+    public static float printTextContent(PDDocument doc, float currentYTopValue, PDFont font,
+                                         float fontSize, String content,
+                                         float sideMargin, float verticalPageMargin, boolean heading) {
         String[] words = content.split("\\s+");
         PDPage lastPage = doc.getPage(doc.getNumberOfPages() - 1);
         float rowHeight = 0;
@@ -41,8 +42,8 @@ public class PDFUtil {
             PDPageContentStream contentStream = new PDPageContentStream(doc, lastPage, PDPageContentStream.AppendMode.APPEND, true);
             contentStream.setFont(font, fontSize);
             contentStream.beginText();
-            newLineYHeight = newLineYHeight - verticalPageMargin;
-            contentStream.newLineAtOffset(sideMargin, newLineYHeight);
+            currentYTopValue = currentYTopValue - verticalPageMargin / 2;
+            contentStream.newLineAtOffset(sideMargin, currentYTopValue);
             float lineMaxWidth = lastPage.getMediaBox().getWidth() - 2 * sideMargin;
             boolean firstWord = true;
             StringBuilder stringBuilder = new StringBuilder();
@@ -52,15 +53,15 @@ public class PDFUtil {
 
 
             for (String word : words) {
-                if (newLineYHeight < verticalPageMargin + rowHeight || heading && (newLineYHeight < verticalPageMargin + 2 * rowHeight)) {
+                if (currentYTopValue < verticalPageMargin + rowHeight || heading && (currentYTopValue < verticalPageMargin + 2 * rowHeight)) {
                     PDPage newPage = new PDPage(lastPage.getMediaBox());
                     doc.addPage(newPage);
                     contentStream.close();
                     contentStream = new PDPageContentStream(doc, newPage, PDPageContentStream.AppendMode.APPEND, true);
-                    newLineYHeight = newPage.getMediaBox().getHeight() - verticalPageMargin;
+                    currentYTopValue = newPage.getMediaBox().getHeight() - verticalPageMargin;
                     contentStream.setFont(font, fontSize);
                     contentStream.beginText();
-                    contentStream.newLineAtOffset(sideMargin, newLineYHeight);
+                    contentStream.newLineAtOffset(sideMargin, currentYTopValue);
                 }
                 if (firstWord && (font.getStringWidth(word + "\s".repeat(4)) / 1000) * fontSize < lineMaxWidth) {
                     stringBuilder.append("\s".repeat(4)).append(word).append("\s");
@@ -69,7 +70,7 @@ public class PDFUtil {
                 } else if ((font.getStringWidth(stringBuilder + " " + word) / 1000) * fontSize > lineMaxWidth) {
                     contentStream.newLineAtOffset(0, -rowHeight);
                     contentStream.showText(stringBuilder.toString());
-                    newLineYHeight = newLineYHeight - rowHeight;
+                    currentYTopValue = currentYTopValue - rowHeight;
                     stringBuilder.setLength(0);
                 }
                 stringBuilder.append(word).append('\s');
@@ -79,13 +80,27 @@ public class PDFUtil {
             contentStream.endText();
             contentStream.close();
         } catch (IOException e) {
-            LoggerFactory.getLogger(PDFUtil.class).error("error during paragraph printing");
+            throw new RuntimeException("error during paragraph printing");
         }
-        return newLineYHeight;
+        return currentYTopValue;
     }
 
-    public static <T extends Record & AllFieldsToStringReady> float drawSVGStructure(PDDocument doc, float startX, String content, float sideMargin, float verticalMargin, float maxWidth, float newLineYHeight, TableGenerator<T> tableGenerator, float minHeight) {
-        PDPage lastPage = doc.getPage(doc.getNumberOfPages() - 1);
+    /**
+     * @param doc              The PDF document where the SVG will be printed
+     * @param startX           The horizontal position on the last page of the document where the SVG starts, counting from the left side
+     * @param content          A string that contains the SVG
+     * @param sidePadding      The padding to be left on the sides of the SVG
+     * @param verticalPadding  The padding to be left at the top and bottom of the SVG
+     * @param maxWidth         The maximum acceptable width of the resulting SVG
+     * @param currentYTopValue The vertical position on the last page of the document where the SVG starts
+     * @param minHeight        The minimum height of the resulting SVG
+     * @return The height (in the Y-direction) from the bottom of the page to SVG beginning
+     */
+    public static float drawSVG(PDDocument doc, float startX, String content,
+                                float sidePadding, float verticalPadding, float maxWidth,
+                                float currentYTopValue, float minHeight) {
+        int lastPageIndex = doc.getNumberOfPages() - 1;
+        PDPage lastPage = doc.getPage(lastPageIndex);
         PDFTranscoder pdfTranscoder = new PDFTranscoder();
         TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(content.getBytes()));
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
@@ -113,9 +128,9 @@ public class PDFUtil {
                 float originalScaledHeight = currentRowHeight;
                 currentRowHeight = Math.max(currentRowHeight, minHeight);
 
-                newLineYHeight = newLineYHeight - currentRowHeight - (2 * verticalMargin);
+                currentYTopValue = currentYTopValue - currentRowHeight - (2 * verticalPadding);
                 float shift = (maxWidth - (pageWithSVG.getMediaBox().getWidth() * scaleX)) / 2;
-                matrix.translate(startX + shift + sideMargin, newLineYHeight + ((currentRowHeight - originalScaledHeight) / 2) + verticalMargin);
+                matrix.translate(startX + shift + sidePadding, currentYTopValue + ((currentRowHeight - originalScaledHeight) / 2) + verticalPadding);
                 matrix.scale(scaleX, scaleY);
                 object.setMatrix(matrix);
                 object.setFormType(1);
@@ -124,16 +139,16 @@ public class PDFUtil {
                 stream.drawForm(object);
             } else {
                 stream = new PDPageContentStream(doc, lastPage, PDPageContentStream.AppendMode.APPEND, true);
-                newLineYHeight = newLineYHeight - currentRowHeight - (2 * verticalMargin);
+                currentYTopValue = currentYTopValue - currentRowHeight - (2 * verticalPadding);
             }
             stream.setStrokingColor(Color.black);
-            stream.setLineWidth(0.125f);
-            stream.addRect(startX, newLineYHeight, maxWidth + sideMargin * 2, currentRowHeight + verticalMargin * 2);
+            stream.setLineWidth(DEFAULT_BORDER_LINE_WIDTH);
+            stream.addRect(startX, currentYTopValue, maxWidth + sidePadding * 2, currentRowHeight + verticalPadding * 2);
             stream.stroke();
             stream.close();
         } catch (IOException | TranscoderException e) {
-            LoggerFactory.getLogger(PDFUtil.class).error("error during paragraph printing");
+            throw new RuntimeException("error during svg printing");
         }
-        return newLineYHeight;
+        return currentYTopValue;
     }
 }

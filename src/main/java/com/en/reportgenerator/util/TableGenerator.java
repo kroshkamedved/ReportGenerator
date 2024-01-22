@@ -1,7 +1,7 @@
-package com.example.reportgenerator.util;
+package com.en.reportgenerator.util;
 
-import com.example.reportgenerator.domain.AllFieldsToStringReady;
-import com.example.reportgenerator.domain.SVGColumn;
+import com.en.reportgenerator.domain.AllFieldsToStringReady;
+import com.en.reportgenerator.domain.SVGColumn;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -171,7 +171,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
      * @param fontSize    preferred font size(not guaranteed)
      * @return Y height of the last line in the document
      */
-    public float createTable(PDRectangle pdRectangle, float fontSize) throws IOException, InvocationTargetException, IllegalAccessException {
+    public float createTable(PDRectangle pdRectangle, float fontSize) {
         setCurrentFontSize(fontSize);
         PDPage page;
         if (pageWithSVG != null) {
@@ -184,19 +184,23 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
             this.currentYTopValue = page.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN;
             document.addPage(page);
         }
-        PDPageContentStream stream = new PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true);
-        float startX = DEFAULT_PAGE_SIDE_MARGIN;
-        float tableMaxWidth = Math.round(pdRectangle.getWidth() - (DEFAULT_PAGE_SIDE_MARGIN * 2));
-        float lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
+        try {
+            PDPageContentStream stream = new PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND, true);
+            float startX = DEFAULT_PAGE_SIDE_MARGIN;
+            float tableMaxWidth = Math.round(pdRectangle.getWidth() - (DEFAULT_PAGE_SIDE_MARGIN * 2));
+            float lastRawPosition = DEFAULT_PAGE_VERTICAL_MARGIN;
 
-        adjustFont(tableMaxWidth, stream);
-        if (currentYTopValue < DEFAULT_PAGE_VERTICAL_MARGIN + headerRowHeight + PDRectangle.A4.getHeight() / 9)
-            currentYTopValue = -1;
-        stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
-        stream = drawTableRaws(stream, startX, lastRawPosition);
-        pageChanged = false;
-        stream.close();
-        return currentYTopValue;
+            adjustFont(tableMaxWidth, stream);
+            if (currentYTopValue < DEFAULT_PAGE_VERTICAL_MARGIN + headerRowHeight + PDRectangle.A4.getHeight() / 9)
+                currentYTopValue = -1;
+            stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
+            stream = drawTableRaws(stream, startX, lastRawPosition);
+            pageChanged = false;
+            stream.close();
+            return currentYTopValue;
+        } catch (IOException | InvocationTargetException | IllegalAccessException e) {
+            throw new RuntimeException("problem during table generation");
+        }
     }
 
     private PDPageContentStream drawTableRaws(PDPageContentStream stream, float startX, float lastRawPosition) throws InvocationTargetException, IllegalAccessException, IOException {
@@ -224,26 +228,26 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     }
 
     private void drawRow(PDPageContentStream stream, float cellMargin, float startX, T t) throws InvocationTargetException, IllegalAccessException, IOException {
+        float multiRowMaxCellHeight = 0f;
         float nextRowYHeight = currentYTopValue - headerRowHeight;
         for (String columnName : tableHeaders.keySet()) {
             Object content = tableHeaders.get(columnName).invoke(t);
             if (content == null) {
                 content = "";
-//                if (multiLineFieldsHeight.containsKey(t)) {
-//                    nextRowYHeight = multiLineFieldsHeight.get(t);
-//                } else {
-//                    nextRowYHeight = headerRowHeight;
-//                }
             }
             if (svgPresent && svgFieldsWidthMap.containsKey(columnName)) {
-                float multiRowMaxColumnHeight = 0f;
+
                 if (multiLineFieldsHeight.containsKey(t)) {
-                    multiRowMaxColumnHeight = multiLineFieldsHeight.get(t);
+                    multiRowMaxCellHeight = multiLineFieldsHeight.get(t);
                 }
-                nextRowYHeight = PDFUtil.drawSVGStructure(document, startX, content.toString(), cellMargin, cellMargin, svgFieldsWidthMap.get(columnName), currentYTopValue, this, multiRowMaxColumnHeight);
+                nextRowYHeight = PDFUtil.drawSVG(document, startX, content.toString(), cellMargin, cellMargin, svgFieldsWidthMap.get(columnName), currentYTopValue, multiRowMaxCellHeight);
                 startX = startX + svgFieldsWidthMap.get(columnName) + cellMargin * 2;
             } else {
-                //TODO Minus widest column and plus 0.15 of the page width instead and check, if acceptable value obtained - calc coefficient and if not - repeat with the next widest row
+                if (multiLineFieldsHeight.containsKey(t) && !svgPresent) {
+                    multiRowMaxCellHeight = multiLineFieldsHeight.get(t);
+                    float rowHeight = Float.max(multiRowMaxCellHeight, headerRowHeight);
+                    nextRowYHeight = currentYTopValue - rowHeight;
+                }
                 if (multiRowColumns.get(t).contains(columnName)) {
                     startX = drawMultiRowCell(stream, startX, columnName, currentYTopValue - nextRowYHeight, content.toString(), tableWidthCoefficient, REGEX_FOR_MOL_NAMES, t);
                 } else {
@@ -251,7 +255,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 }
             }
         }
-        if (svgPresent) {
+        if (svgPresent || nextRowYHeight != headerRowHeight) {
             currentYTopValue = nextRowYHeight;
         }
     }
@@ -263,7 +267,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         Matcher matcher = pattern.matcher(content);
         StringBuilder sb = new StringBuilder();
         int start = 0;
-        int end = 0;
+        int end;
         while (matcher.find()) {
             end = matcher.end();
             String currentSubstring = content.substring(start, end);
@@ -280,12 +284,9 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
             }
         }
         if (!sb.isEmpty()) tmpList.add(sb.toString());
-        //  splitRegexNotMatchedContentResidue(tmpList, end, content, currentColumnMaxWidth);
         String[] words = new String[tmpList.size()];
         words = tmpList.toArray(words);
         drawRectangle(columnName, stream, startX, currentYTopValue, rowHeight, tableWidthCoefficient);
-        // float currentContentHeight = multiLineFieldsHeight.get(t);
-        // float verticalCenterPoint = calcCenteredTextVerticalPosition(newLineYHeight, currentContentHeight, cellMargin, content);
         float contentHeight = multiLineFieldsHeight.get(t);
         if (specificRowColumnContentHeight.containsKey(t) && specificRowColumnContentHeight.get(t).containsKey(columnName)) {
             contentHeight = specificRowColumnContentHeight.get(t).get(columnName);
@@ -297,30 +298,6 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
             currentStartPoint = currentStartPoint - headerRowHeight;
         }
         return startX + (columnWidthMap.get(columnName) + 2 * cellMargin) * tableWidthCoefficient;
-    }
-
-    private int calcResidueRows(int end, String content, float currentColumnMaxWidth) throws IOException {
-        List<String> substrings = new ArrayList<>();
-        splitRegexNotMatchedContentResidue(substrings, end, content, currentColumnMaxWidth);
-        return substrings.size();
-    }
-
-    private void splitRegexNotMatchedContentResidue(List<String> tmpList, int end, String content, float currentColumnMaxWidth) throws IOException {
-        String residue = content.substring(end);
-        float residueTextWidth = calcStringWidth(residue);
-        if (residueTextWidth > 0) {
-            double rowsNumber = Math.ceil(residueTextWidth / currentColumnMaxWidth - (2 * cellMargin));
-            int rowSymbolsQuantity = (int) Math.floor(residue.length() / rowsNumber);
-            end = 0;
-            for (int i = 0; i < rowsNumber; i++) {
-                if (i == rowsNumber - 1) {
-                    tmpList.add(residue.substring(end));
-                } else {
-                    tmpList.add(residue.substring(0, rowSymbolsQuantity));
-                    end = end + rowSymbolsQuantity;
-                }
-            }
-        }
     }
 
     private PDPageContentStream drawTableHeader(PDPageContentStream stream, float startX, float rowHeight, float lastRawPosition) throws IOException {
