@@ -11,8 +11,7 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.w3c.dom.Element;
 import org.w3c.dom.svg.SVGDocument;
 
@@ -52,7 +51,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     private final PDDocument document;
     private PDPage pageWithSVG;
-    private PDType1Font font;
+    private PDFont font;
     private final List<T> tableRows;
     private final Class<T> clazz;
     private Map<String, Method> tableHeaders;
@@ -75,24 +74,17 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private float currentFontHeight;
 
 
-    public TableGenerator(List<T> tableRows, Class<T> clazz, PDDocument document, float firstPageAdditionalTopPadding) {
+    public TableGenerator(List<T> tableRows, Class<T> clazz, PDDocument document, float firstPageAdditionalTopPadding, PDFont font) {
         this.tableRows = tableRows;
         this.clazz = clazz;
         this.document = document;
         tableHeaders = new TreeMap<>();
         columnWidthMap = new HashMap<>();
-        font = new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN);
+        this.font = font;
         this.pageWithSVG = document.getPage(document.getNumberOfPages() - 1);
         this.firstPageAdditionalTopPadding = firstPageAdditionalTopPadding;
         this.maxSvgColumnWidth = pageWithSVG.getMediaBox().getWidth() * 0.15f;
         initialize();
-    }
-
-    public void setCurrentFontSize(float currentFontSize) {
-        this.currentFontSize = currentFontSize;
-        this.currentFontHeight = font.getFontDescriptor().getFontBoundingBox().getHeight() / 1000 * currentFontSize;
-        this.cellMargin = currentFontHeight * 0.5f;
-        this.headerRowHeight = (font.getFontDescriptor().getFontBoundingBox().getHeight() / 1000) * currentFontSize + cellMargin;
     }
 
     /**
@@ -105,6 +97,13 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         Field[] fields = clazz.getDeclaredFields();
         fulfillTableHeadersMap(fields, methods);
         prepareMultiRowColumnsMap(tableRows);
+    }
+
+    public void setCurrentFontSize(float currentFontSize) {
+        this.currentFontSize = currentFontSize;
+        this.currentFontHeight = font.getFontDescriptor().getFontBoundingBox().getHeight() / 1000 * currentFontSize;
+        this.cellMargin = currentFontHeight * 0.5f;
+        this.headerRowHeight = (font.getFontDescriptor().getFontBoundingBox().getHeight() / 1000) * currentFontSize + cellMargin;
     }
 
     private void prepareMultiRowColumnsMap(List<T> tableRows) {
@@ -194,7 +193,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
             if (currentYTopValue < DEFAULT_PAGE_VERTICAL_MARGIN + headerRowHeight + PDRectangle.A4.getHeight() / 9)
                 currentYTopValue = -1;
             stream = drawTableHeader(stream, startX, headerRowHeight, lastRawPosition);
-            stream = drawTableRaws(stream, startX, lastRawPosition);
+            stream = drawTableRows(stream, startX, lastRawPosition);
             pageChanged = false;
             stream.close();
             return currentYTopValue;
@@ -203,7 +202,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         }
     }
 
-    private PDPageContentStream drawTableRaws(PDPageContentStream stream, float startX, float lastRawPosition) throws InvocationTargetException, IllegalAccessException, IOException {
+    private PDPageContentStream drawTableRows(PDPageContentStream stream, float startX, float lastRawPosition) throws InvocationTargetException, IllegalAccessException, IOException {
         for (T t : tableRows) {
             float currentRowMaxHeight = headerRowHeight;
             if (specificRowColumnContentHeight.containsKey(t)) {

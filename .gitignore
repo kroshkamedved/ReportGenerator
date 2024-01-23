@@ -4,7 +4,8 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 .env
-
+src/DS_Store
+.DS_Store
 ### STS ###
 .apt_generated
 .classpath

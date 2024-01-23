@@ -25,7 +25,7 @@ import java.util.Objects;
 @Service
 public class ReportService {
 
-    private static final PDFont DEFAULT_DOC_FONT = new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN);
+    private static final PDFont DEFAULT_TABLE_FONT = new PDType1Font(Standard14Fonts.FontName.TIMES_ROMAN);
     private static final float DEFAULT_HEADING_FONT_SIZE = 9;
     private static final float DEFAULT_PAGE_SIDE_MARGIN = 20f;
     private static final float DEFAULT_PAGE_VERTICAL_MARGIN = 30f;
@@ -43,13 +43,21 @@ public class ReportService {
 
         String reactionSchemaSVG = experiment.svg();
         String reactionProcedure = experiment.comment();
-        int experimentId = experiment.id();
 
         PDDocument document = new PDDocument();
         PDRectangle pageFormat = PDRectangle.A4;
         PDPage firstPage = new PDPage(pageFormat);
         document.addPage(firstPage);
-        float lastLineYHeight = drawExperimentHeading(document, firstPage, experimentId, pageFormat);
+
+        String fontPath = "src/main/resources/static/Roboto-LightItalic.ttf";
+        PDFont DEFAULT_TEXT_FONT;
+        try {
+            DEFAULT_TEXT_FONT = PDType0Font.load(document, new File(fontPath));
+        } catch (IOException e) {
+            LogFactory.getLog(this.getClass()).error("problem with procedure font loading");
+            DEFAULT_TEXT_FONT = DEFAULT_TABLE_FONT;
+        }
+        float lastLineYHeight = drawExperimentHeading(document, firstPage, experiment, pageFormat);
 
         lastLineYHeight = drawReactionSchema(reactionSchemaSVG, document, lastLineYHeight, pageFormat);
         lastLineYHeight = drawTable(reactants, document, lastLineYHeight, "REACTANTS TABLE:", pageFormat);
@@ -58,16 +66,9 @@ public class ReportService {
 
         lastLineYHeight = drawTable(products, document, lastLineYHeight, "PRODUCTS TABLE:", pageFormat);
 
-        lastLineYHeight = PDFUtil.printTextContent(document, lastLineYHeight, DEFAULT_DOC_FONT, DEFAULT_HEADING_FONT_SIZE, "PROCEDURE:", DEFAULT_PAGE_SIDE_MARGIN + TAB_SPACE, DEFAULT_VERTICAL_PAGE_MARGIN, true);
+        lastLineYHeight = PDFUtil.printTextContent(document, lastLineYHeight, DEFAULT_TABLE_FONT, DEFAULT_HEADING_FONT_SIZE, "PROCEDURE:", DEFAULT_PAGE_SIDE_MARGIN + TAB_SPACE, DEFAULT_VERTICAL_PAGE_MARGIN, true);
 
-        String fontPath = "src/main/resources/static/Roboto-LightItalic.ttf";
-        PDFont font = DEFAULT_DOC_FONT;
-        try {
-            font = PDType0Font.load(document, new File(fontPath));
-        } catch (IOException e) {
-            LogFactory.getLog(this.getClass()).error("problem with procedure font loading");
-        }
-        PDFUtil.printTextContent(document, lastLineYHeight, font, DEFAULT_TABLE_FONT_SIZE, reactionProcedure, DEFAULT_PAGE_SIDE_MARGIN, DEFAULT_VERTICAL_PAGE_MARGIN, false);
+        PDFUtil.printTextContent(document, lastLineYHeight, DEFAULT_TEXT_FONT, DEFAULT_TABLE_FONT_SIZE, reactionProcedure, DEFAULT_PAGE_SIDE_MARGIN, DEFAULT_VERTICAL_PAGE_MARGIN, false);
         return document;
     }
 
@@ -76,8 +77,8 @@ public class ReportService {
             return lastLineYHeight;
         }
         Class<T> clazz = (Class<T>) tableRows.get(0).getClass();
-        lastLineYHeight = PDFUtil.printTextContent(document, lastLineYHeight, DEFAULT_DOC_FONT, DEFAULT_HEADING_FONT_SIZE, tableHeading, DEFAULT_PAGE_SIDE_MARGIN + TAB_SPACE, DEFAULT_VERTICAL_PAGE_MARGIN, true);
-        TableGenerator<T> tableGenerator = new TableGenerator<>(tableRows, clazz, document, pageFormat.getHeight() - lastLineYHeight);
+        lastLineYHeight = PDFUtil.printTextContent(document, lastLineYHeight, DEFAULT_TABLE_FONT, DEFAULT_HEADING_FONT_SIZE, tableHeading, DEFAULT_PAGE_SIDE_MARGIN + TAB_SPACE, DEFAULT_VERTICAL_PAGE_MARGIN, true);
+        TableGenerator<T> tableGenerator = new TableGenerator<>(tableRows, clazz, document, pageFormat.getHeight() - lastLineYHeight, DEFAULT_TABLE_FONT);
         return tableGenerator.createTable(pageFormat, DEFAULT_TABLE_FONT_SIZE);
     }
 
@@ -90,17 +91,18 @@ public class ReportService {
         return PDFUtil.drawSVG(document, DEFAULT_PAGE_SIDE_MARGIN, reactionSchemaSVG, DEFAULT_PAGE_SIDE_MARGIN, DEFAULT_PAGE_VERTICAL_MARGIN, maxWidth, lastLineYHeight, minHeight);
     }
 
-    private float drawExperimentHeading(PDDocument document, PDPage firstPage, int expId, PDRectangle pageFormat) {
+    private float drawExperimentHeading(PDDocument document, PDPage firstPage, Experiment exp, PDRectangle pageFormat) {
 
         try {
-            PDPageContentStream str = new PDPageContentStream(document, firstPage, PDPageContentStream.AppendMode.APPEND, true);
-            str.setFont(DEFAULT_DOC_FONT, DEFAULT_HEADING_FONT_SIZE);
+            PDPageContentStream str = new PDPageContentStream(document, firstPage, PDPageContentStream.AppendMode.APPEND, false);
+            str.setFont(DEFAULT_TABLE_FONT, DEFAULT_HEADING_FONT_SIZE);
             str.beginText();
             str.newLineAtOffset(DEFAULT_PAGE_SIDE_MARGIN, pageFormat.getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN + TAB_SPACE);
-            str.showText("Experiment id : " + expId);
+            String formattedHeading = String.format("Experiment id : %d ( PRODUCER : %s ( id:%d ) )", exp.id(), exp.ownerName(), exp.ownerId());
+            str.showText(formattedHeading);
             str.endText();
             str.close();
-            return firstPage.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN - DEFAULT_DOC_FONT.getBoundingBox().getHeight() / 1000 * DEFAULT_HEADING_FONT_SIZE;
+            return firstPage.getMediaBox().getHeight() - DEFAULT_PAGE_VERTICAL_MARGIN - DEFAULT_TABLE_FONT.getBoundingBox().getHeight() / 1000 * DEFAULT_HEADING_FONT_SIZE;
         } catch (IOException e) {
             throw new RuntimeException("problem with printing experiment data");
         }

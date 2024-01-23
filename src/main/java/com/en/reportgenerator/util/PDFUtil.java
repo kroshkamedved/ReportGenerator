@@ -38,8 +38,9 @@ public class PDFUtil {
         String[] words = content.split("\\s+");
         PDPage lastPage = doc.getPage(doc.getNumberOfPages() - 1);
         float rowHeight = 0;
+        PDPageContentStream contentStream = null;
         try {
-            PDPageContentStream contentStream = new PDPageContentStream(doc, lastPage, PDPageContentStream.AppendMode.APPEND, true);
+            contentStream = new PDPageContentStream(doc, lastPage, PDPageContentStream.AppendMode.APPEND, true);
             contentStream.setFont(font, fontSize);
             contentStream.beginText();
             currentYTopValue = currentYTopValue - verticalPageMargin / 2;
@@ -56,6 +57,7 @@ public class PDFUtil {
                 if (currentYTopValue < verticalPageMargin + rowHeight || heading && (currentYTopValue < verticalPageMargin + 2 * rowHeight)) {
                     PDPage newPage = new PDPage(lastPage.getMediaBox());
                     doc.addPage(newPage);
+                    contentStream.endText();
                     contentStream.close();
                     contentStream = new PDPageContentStream(doc, newPage, PDPageContentStream.AppendMode.APPEND, true);
                     currentYTopValue = newPage.getMediaBox().getHeight() - verticalPageMargin;
@@ -81,6 +83,14 @@ public class PDFUtil {
             contentStream.close();
         } catch (IOException e) {
             throw new RuntimeException("error during paragraph printing");
+        } finally {
+            if (contentStream != null) {
+                try {
+                    contentStream.close();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
         }
         return currentYTopValue;
     }
@@ -106,11 +116,12 @@ public class PDFUtil {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         TranscoderOutput output = new TranscoderOutput(outputStream);
         PDPageContentStream stream = null;
+        PDDocument transcodedSvgToPDF = null;
         float currentRowHeight = minHeight;
         try {
             if (!content.isEmpty()) {
                 pdfTranscoder.transcode(input, output);
-                PDDocument transcodedSvgToPDF = Loader.loadPDF(outputStream.toByteArray());
+                transcodedSvgToPDF = Loader.loadPDF(outputStream.toByteArray());
                 PDPage pageWithSVG = transcodedSvgToPDF.getPage(0);
                 PDFormXObject object = new PDFormXObject(new PDStream(transcodedSvgToPDF, pageWithSVG.getContents()));
                 object.setResources(pageWithSVG.getResources());
@@ -145,10 +156,20 @@ public class PDFUtil {
             stream.setLineWidth(DEFAULT_BORDER_LINE_WIDTH);
             stream.addRect(startX, currentYTopValue, maxWidth + sidePadding * 2, currentRowHeight + verticalPadding * 2);
             stream.stroke();
+            outputStream.flush();
+            outputStream.close();
             stream.close();
         } catch (IOException | TranscoderException e) {
             throw new RuntimeException("error during svg printing");
+        } finally {
+        if (stream != null) {
+            try {
+                stream.close();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
+    }
         return currentYTopValue;
     }
 }

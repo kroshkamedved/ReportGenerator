@@ -1,9 +1,8 @@
 package com.en.reportgenerator.controller;
 
-import com.en.reportgenerator.service.ReportService;
 import com.en.reportgenerator.dto.ReportDTO;
+import com.en.reportgenerator.service.ReportService;
 import lombok.RequiredArgsConstructor;
-import org.apache.batik.transcoder.TranscoderException;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
@@ -19,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -31,7 +29,7 @@ public class ReportController {
     private final ReportService reportService;
 
     @PostMapping(path = "/pdf", consumes = {"application/json"})
-    public ResponseEntity<ByteArrayResource> generatePDF(@RequestBody ReportDTO reportData) throws IOException, InvocationTargetException, IllegalAccessException, TranscoderException {
+    public ResponseEntity<ByteArrayResource> generatePDF(@RequestBody ReportDTO reportData) throws IOException {
         String date = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-hhmm"));
         String filename = date + "exp" + reportData.getExperiment().id() + ".pdf";
         PDDocument document = reportService.generatePDF(reportData);
