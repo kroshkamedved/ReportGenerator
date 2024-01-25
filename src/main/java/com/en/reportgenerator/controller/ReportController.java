@@ -40,6 +40,7 @@ public class ReportController {
                 .allow(HttpMethod.POST)
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
+                .header(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS,"*")
                 .body(new ByteArrayResource(byteArray.toByteArray()));
     }
 }
