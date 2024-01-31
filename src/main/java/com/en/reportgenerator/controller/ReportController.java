@@ -40,7 +40,8 @@ public class ReportController {
                 .allow(HttpMethod.POST)
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
-                .header(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS,"*")
+                .header(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, "*")
+                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Disposition")
                 .body(new ByteArrayResource(byteArray.toByteArray()));
     }
 }
