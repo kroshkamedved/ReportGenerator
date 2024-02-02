@@ -84,7 +84,6 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         this.pageWithSVG = document.getPage(document.getNumberOfPages() - 1);
         this.firstPageAdditionalTopPadding = firstPageAdditionalTopPadding;
         this.maxSvgColumnWidth = pageWithSVG.getMediaBox().getWidth() * 0.15f;
-        initialize();
     }
 
     /**
@@ -150,6 +149,13 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     private Optional<Float> calculateSVGWidth(Field field, String width) {
         field.setAccessible(true);
+        float fieldNameWidth = 0f;
+        try {
+            fieldNameWidth = calcStringWidth(field.getName());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        float nameWidth = fieldNameWidth;
         return tableRows.stream()
                 .map(t -> {
                     try {
@@ -160,7 +166,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 }).filter(Objects::nonNull)
                 .map(svg -> getSizeAttributeValueFromSVG(svg, width))
                 .max(Float::compare)
-                .map(a -> Float.min(a, maxSvgColumnWidth));
+                .map(a -> Float.min(a, maxSvgColumnWidth))
+                .map(a -> Float.max(a, nameWidth));
     }
 
     /**
@@ -172,6 +179,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
      */
     public float createTable(PDRectangle pdRectangle, float fontSize) {
         setCurrentFontSize(fontSize);
+        initialize();
         PDPage page;
         if (pageWithSVG != null) {
             pdRectangle = pageWithSVG.getMediaBox();
@@ -239,8 +247,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 if (multiLineFieldsHeight.containsKey(t)) {
                     multiRowMaxCellHeight = multiLineFieldsHeight.get(t);
                 }
-                nextRowYHeight = PDFUtil.drawSVG(document, startX, content.toString(), cellMargin, cellMargin, svgFieldsWidthMap.get(columnName), currentYTopValue, multiRowMaxCellHeight);
-                startX = startX + svgFieldsWidthMap.get(columnName) + cellMargin * 2;
+                nextRowYHeight = PDFUtil.drawSVG(document, startX, content.toString(), cellMargin, cellMargin, columnWidthMap.get(columnName), currentYTopValue, multiRowMaxCellHeight);
+                startX = startX + columnWidthMap.get(columnName) + cellMargin * 2;
             } else {
                 if (multiLineFieldsHeight.containsKey(t) && !svgPresent) {
                     multiRowMaxCellHeight = multiLineFieldsHeight.get(t);
@@ -355,13 +363,14 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         stream.setFont(font, currentFontSize);
         for (String columnName : tableHeaders.keySet()) {
             if (svgPresent && svgFieldsWidthMap.containsKey(columnName)) {
-                columnWidthMap.put(columnName, svgFieldsWidthMap.get(columnName));
+                float currentColumnMaxWidthValue = Float.max(svgFieldsWidthMap.get(columnName), calcStringWidth(columnName));
+                columnWidthMap.put(columnName, currentColumnMaxWidthValue);
             } else {
                 float maxColumnValue = findMaxColumnWidth(columnName);
                 columnWidthMap.put(columnName, (maxColumnValue / 1000) * currentFontSize);
             }
         }
-        float totalWidth = Math.round(calculateTotalWidth());
+        float totalWidth = calculateTotalWidth();
         while (totalWidth > tableMaxWidth) {
             if (currentFontSize == DEFAULT_MIN_FONT_SIZE) {
                 adjustLargestRows(tableMaxWidth);
@@ -370,9 +379,9 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
             }
             setCurrentFontSize(--currentFontSize);
             adjustFont(tableMaxWidth, stream);
-            totalWidth = Math.round(calculateTotalWidth());
+            totalWidth = (calculateTotalWidth());
         }
-        float totalRowSVGWidth = Math.round(svgFieldsWidthMap.values().stream().reduce(0.0f, Float::sum));
+        float totalRowSVGWidth = (svgFieldsWidthMap.values().stream().reduce(0.0f, (f1, f2) -> f1 + (2 * cellMargin) + f2));
         tableWidthCoefficient = (tableMaxWidth - totalRowSVGWidth) / (totalWidth - totalRowSVGWidth);
     }
 
@@ -473,7 +482,8 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     private float drawContent(PDPageContentStream contentStream, float startX, String columnName, float rowHeight, String content, float tableWidthCoefficient) throws IOException {
         float width = columnWidthMap.get(columnName);
-        float contentDependentHorizontalShift = calcCenteredTextStartingPosition(width, content);
+        if (svgFieldsWidthMap.containsKey(columnName)) tableWidthCoefficient = 1;
+        float contentDependentHorizontalShift = calcCenteredTextStartingPosition(width, content, tableWidthCoefficient);
         if (svgFieldsWidthMap.containsKey(columnName)) {
             contentDependentHorizontalShift = contentDependentHorizontalShift / tableWidthCoefficient;
             tableWidthCoefficient = 1;
@@ -489,7 +499,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
 
     private void drawMultiRowContent(PDPageContentStream contentStream, float startX, String columnName, float startY, String content, float tableWidthCoefficient) throws IOException {
         float width = columnWidthMap.get(columnName);
-        float contentDependentHorizontalShift = calcCenteredTextStartingPosition(width, content);
+        float contentDependentHorizontalShift = calcCenteredTextStartingPosition(width, content, tableWidthCoefficient);
         if (svgFieldsWidthMap.containsKey(columnName)) {
             contentDependentHorizontalShift = contentDependentHorizontalShift / tableWidthCoefficient;
         }
@@ -521,7 +531,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         return newLineYHeight - rowHeight + (rowHeight / 2) - (defaultRowHeight / 2);
     }
 
-    private float calcCenteredTextStartingPosition(float width, String content) throws IOException {
+    private float calcCenteredTextStartingPosition(float width, String content, float tableWidthCoefficient) throws IOException {
         float adjustedCellMargin = cellMargin * tableWidthCoefficient;
         float adjustedCurrentColumnCenterPosition = (width * tableWidthCoefficient) / 2;
         float currentContentHalfWidth = calcStringWidth(content) / 2;
