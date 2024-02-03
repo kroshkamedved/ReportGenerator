@@ -268,7 +268,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     }
 
     private float drawMultiRowCell(PDPageContentStream stream, float startX, String columnName, float rowHeight, String content, float tableWidthCoefficient, String regex, T t) throws IOException {
-        float currentColumnMaxWidth = columnWidthMap.get(columnName);
+        float currentColumnMaxWidth = columnWidthMap.get(columnName) * tableWidthCoefficient;
         List<String> tmpList = new ArrayList<>();
         Pattern pattern = Pattern.compile(regex);
         Matcher matcher = pattern.matcher(content);
@@ -388,31 +388,40 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
     private void adjustLargestRows(float tableMaxWidth) {
         float totalWidth = Math.round(calculateTotalWidth());
         float marginsTotalLength = tableHeaders.size() * (2 * cellMargin);
-        float acceptableColumnSize = (tableMaxWidth - marginsTotalLength) / tableHeaders.size();
-        while (totalWidth > tableMaxWidth) {
+        float totalRowSVGWidth = (svgFieldsWidthMap.values().stream().reduce(0.0f, (f1, f2) -> f1 + (2 * cellMargin) + f2));
+        do {
             Optional<Map.Entry<String, Float>> widestColumn = columnWidthMap.entrySet().stream()
                     .max(Map.Entry.comparingByValue());
+            String columnName = widestColumn.get().getKey();
             for (var row : tableRows) {
+                float acceptableColumnSize = tableMaxWidth - marginsTotalLength - columnWidthMap.entrySet().stream()
+                        .filter(entry -> !entry.getKey().equals(columnName))
+                        .map(Map.Entry::getValue)
+                        .reduce(0f, Float::sum);
+                if (acceptableColumnSize < 0 || acceptableColumnSize > tableMaxWidth / 3) {
+                    acceptableColumnSize = DEFAULT_SVG_COLUMN_HEIGHT;
+                }
                 try {
-                    String columnName = widestColumn.get().getKey();
                     String rowWidestColumnValue = tableHeaders.get(columnName).invoke(row).toString();
-                    int rowNumber = calcRowNumber(rowWidestColumnValue, acceptableColumnSize);
+                    columnWidthMap.put(columnName, acceptableColumnSize);
+                    totalWidth = Math.round(calculateTotalWidth());
+                    float coefficient = (tableMaxWidth - totalRowSVGWidth) / (totalWidth - totalRowSVGWidth);
+                    tableWidthCoefficient = coefficient > 1 ? coefficient : 1;
+                    int rowNumber = calcRowNumber(rowWidestColumnValue, acceptableColumnSize * tableWidthCoefficient);
                     float currentColumnMinHeight = rowNumber * (currentFontHeight + cellMargin);
                     specificRowColumnContentHeight.get(row).put(columnName, currentColumnMinHeight);
                     if (rowNumber > 1) {
-                        columnWidthMap.put(columnName, acceptableColumnSize);
                         multiRowColumns.get(row).add(columnName);
                         if (multiLineFieldsHeight.containsKey(row)) {
                             currentColumnMinHeight = currentColumnMinHeight > multiLineFieldsHeight.get(row) ? currentColumnMinHeight : multiLineFieldsHeight.get(row);
                         }
                         multiLineFieldsHeight.put(row, currentColumnMinHeight);
-                        totalWidth = Math.round(calculateTotalWidth());
                     }
                 } catch (InvocationTargetException | IllegalAccessException | IOException e) {
                     throw new RuntimeException(e);
                 }
             }
-        }
+        } while (totalWidth > tableMaxWidth);
     }
 
     private int calcRowNumber(String rowWidestColumnValue, float averageColumnWidth) throws IOException {
@@ -422,7 +431,7 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
         if (calcStringWidth(rowWidestColumnValue) > averageColumnWidth) {
             int rowQuantity = 0;
             int start = 0;
-            int end = 0;
+            int end;
             while (matcher.find()) {
                 end = matcher.end();
                 String currentSubstring = rowWidestColumnValue.substring(start, end);
@@ -439,7 +448,6 @@ public class TableGenerator<T extends Record & AllFieldsToStringReady> {
                 }
             }
             if (!sb.isEmpty()) ++rowQuantity;
-            //  if (rowQuantity != 0) rowQuantity = rowQuantity + calcResidueRows(end, rowWidestColumnValue, averageColumnWidth);
             return rowQuantity == 0 ? 1 : rowQuantity;
         } else return 1;
     }
